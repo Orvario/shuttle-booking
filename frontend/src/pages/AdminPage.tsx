@@ -103,7 +103,7 @@ export default function AdminPage() {
   const [date, setDate] = useState(todayStr);
   const [currentMonth, setCurrentMonth] = useState(() => todayStr().slice(0, 7));
   const [calendarData, setCalendarData] = useState<CalendarDay[]>([]);
-  const [statusFilter, setStatusFilter] = useState('paid');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState('');

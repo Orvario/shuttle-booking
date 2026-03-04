@@ -204,7 +204,7 @@ def admin_calendar(
 @app.get("/api/admin/bookings", response_model=list[BookingResponse])
 def admin_list_bookings(
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
-    status: str = Query("paid", description="Filter by status: paid, pending, failed, or all"),
+    status: str = Query("all", description="Filter by status: paid, pending, failed, or all"),
     db: Session = Depends(get_db),
     _auth: None = Depends(_verify_admin),
 ):

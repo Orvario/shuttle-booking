@@ -3,13 +3,45 @@ import { API_BASE_URL, PRICE_PER_PASSENGER_ISK, ROUTE } from '../config';
 
 type Direction = 'to_hotel' | 'to_airport';
 
+const TIME_SLOTS = Array.from({ length: 13 }, (_, i) => {
+  const hour = (4 + i).toString().padStart(2, '0');
+  return `${hour}:30`;
+});
+
+const COUNTRY_CODES = [
+  { code: '+354', flag: '\u{1F1EE}\u{1F1F8}', label: 'Iceland' },
+  { code: '+1', flag: '\u{1F1FA}\u{1F1F8}', label: 'USA' },
+  { code: '+44', flag: '\u{1F1EC}\u{1F1E7}', label: 'UK' },
+  { code: '+49', flag: '\u{1F1E9}\u{1F1EA}', label: 'Germany' },
+  { code: '+33', flag: '\u{1F1EB}\u{1F1F7}', label: 'France' },
+  { code: '+34', flag: '\u{1F1EA}\u{1F1F8}', label: 'Spain' },
+  { code: '+39', flag: '\u{1F1EE}\u{1F1F9}', label: 'Italy' },
+  { code: '+31', flag: '\u{1F1F3}\u{1F1F1}', label: 'Netherlands' },
+  { code: '+46', flag: '\u{1F1F8}\u{1F1EA}', label: 'Sweden' },
+  { code: '+47', flag: '\u{1F1F3}\u{1F1F4}', label: 'Norway' },
+  { code: '+45', flag: '\u{1F1E9}\u{1F1F0}', label: 'Denmark' },
+  { code: '+358', flag: '\u{1F1EB}\u{1F1EE}', label: 'Finland' },
+  { code: '+41', flag: '\u{1F1E8}\u{1F1ED}', label: 'Switzerland' },
+  { code: '+43', flag: '\u{1F1E6}\u{1F1F9}', label: 'Austria' },
+  { code: '+48', flag: '\u{1F1F5}\u{1F1F1}', label: 'Poland' },
+  { code: '+61', flag: '\u{1F1E6}\u{1F1FA}', label: 'Australia' },
+  { code: '+81', flag: '\u{1F1EF}\u{1F1F5}', label: 'Japan' },
+  { code: '+86', flag: '\u{1F1E8}\u{1F1F3}', label: 'China' },
+  { code: '+91', flag: '\u{1F1EE}\u{1F1F3}', label: 'India' },
+  { code: '+55', flag: '\u{1F1E7}\u{1F1F7}', label: 'Brazil' },
+];
+
+const MIN_PASSENGERS = 2;
+const MAX_PASSENGERS = 8;
+
 export default function BookingForm() {
   const [direction, setDirection] = useState<Direction>('to_hotel');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
-  const [passengers, setPassengers] = useState(1);
+  const [passengers, setPassengers] = useState(MIN_PASSENGERS);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [countryCode, setCountryCode] = useState('+354');
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -32,7 +64,7 @@ export default function BookingForm() {
           passenger_count: passengers,
           passenger_name: name,
           email,
-          phone,
+          phone: `${countryCode} ${phone}`,
         }),
       });
 
@@ -132,14 +164,18 @@ export default function BookingForm() {
             <label htmlFor="time" className="block text-sm font-medium text-slate-700 mb-1">
               Time
             </label>
-            <input
+            <select
               id="time"
-              type="time"
               required
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-            />
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white"
+            >
+              <option value="" disabled>Select time</option>
+              {TIME_SLOTS.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -151,29 +187,35 @@ export default function BookingForm() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setPassengers(Math.max(1, passengers - 1))}
-              className="w-10 h-10 rounded-lg border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-50 cursor-pointer"
+              onClick={() => setPassengers(Math.max(MIN_PASSENGERS, passengers - 1))}
+              disabled={passengers <= MIN_PASSENGERS}
+              className="w-10 h-10 rounded-lg border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               −
             </button>
             <input
               id="passengers"
               type="number"
-              min={1}
-              max={20}
+              min={MIN_PASSENGERS}
+              max={MAX_PASSENGERS}
               required
               value={passengers}
-              onChange={(e) => setPassengers(Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) => {
+                const v = parseInt(e.target.value) || MIN_PASSENGERS;
+                setPassengers(Math.min(MAX_PASSENGERS, Math.max(MIN_PASSENGERS, v)));
+              }}
               className="w-20 text-center rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
             />
             <button
               type="button"
-              onClick={() => setPassengers(Math.min(20, passengers + 1))}
-              className="w-10 h-10 rounded-lg border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-50 cursor-pointer"
+              onClick={() => setPassengers(Math.min(MAX_PASSENGERS, passengers + 1))}
+              disabled={passengers >= MAX_PASSENGERS}
+              className="w-10 h-10 rounded-lg border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               +
             </button>
           </div>
+          <p className="mt-1 text-xs text-slate-400">{MIN_PASSENGERS}–{MAX_PASSENGERS} passengers</p>
         </div>
 
         {/* Contact details */}
@@ -192,33 +234,44 @@ export default function BookingForm() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-              />
-            </div>
-            <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-slate-700 mb-1">
-                Phone
-              </label>
+          <div>
+            <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
+              Email <span className="text-red-400">*</span>
+            </label>
+            <input
+              id="email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+            />
+          </div>
+          <div>
+            <label htmlFor="phone" className="block text-sm font-medium text-slate-700 mb-1">
+              Phone <span className="text-red-400">*</span>
+            </label>
+            <div className="flex gap-2">
+              <select
+                value={countryCode}
+                onChange={(e) => setCountryCode(e.target.value)}
+                className="rounded-lg border border-slate-300 px-2 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white flex-shrink-0"
+              >
+                {COUNTRY_CODES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.flag} {c.code}
+                  </option>
+                ))}
+              </select>
               <input
                 id="phone"
                 type="tel"
                 required
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="+354 ..."
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                placeholder="Phone number"
+                className="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
               />
             </div>
           </div>

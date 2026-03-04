@@ -40,8 +40,8 @@ async def create_booking(
 ):
     if req.direction not in ("to_hotel", "to_airport"):
         raise HTTPException(status_code=400, detail="Invalid direction")
-    if req.passenger_count < 1 or req.passenger_count > 20:
-        raise HTTPException(status_code=400, detail="1-20 passengers allowed")
+    if req.passenger_count < 2 or req.passenger_count > 8:
+        raise HTTPException(status_code=400, detail="2-8 passengers allowed")
 
     amount = req.passenger_count * settings.price_per_passenger_isk
 

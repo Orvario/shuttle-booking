@@ -6,5 +6,5 @@ export const CURRENCY = 'ISK';
 
 export const ROUTE = {
   from: 'Keflavík International Airport (KEF)',
-  to: 'Flyers Hotel',
+  to: 'Flyers Airport Hotel',
 };

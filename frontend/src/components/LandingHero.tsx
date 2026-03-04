@@ -22,7 +22,7 @@ export default function LandingHero({ onBookNow }: LandingHeroProps) {
         <div className="inline-block bg-white rounded-xl px-6 py-3 mb-8 shadow-lg">
           <img
             src="/logo.png"
-            alt="Flyers Keflavik Airport Hotel"
+            alt="Flyers Airport Hotel"
             className="h-10 md:h-12"
           />
         </div>

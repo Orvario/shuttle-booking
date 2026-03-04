@@ -82,3 +82,4 @@ Copy the HMAC key from the portal and set it as `STRAUMUR_HMAC_KEY`.
 |---------|----------------|---------------|
 | Straumur | portal.straumur.is | API key, Terminal ID, HMAC key |
 | Resend | resend.com/api-keys | API key + verify your custom domain |
+# shuttle

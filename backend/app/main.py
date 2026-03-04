@@ -191,7 +191,6 @@ def admin_calendar(
         )
         .filter(
             Booking.date.like(f"{month}-%"),
-            Booking.status == "paid",
         )
         .group_by(Booking.date)
         .all()

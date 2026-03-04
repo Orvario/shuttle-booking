@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import { API_BASE_URL } from '../config';
+import MiniCalendar from '../components/MiniCalendar';
 
 interface Booking {
   id: string;
@@ -15,20 +16,19 @@ interface Booking {
   created_at: string;
 }
 
+interface CalendarDay {
+  date: string;
+  count: number;
+  passengers: number;
+}
+
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-GB', {
     weekday: 'long',
-    year: 'numeric',
-    month: 'long',
     day: 'numeric',
+    month: 'long',
   });
-}
-
-function shiftDate(dateStr: string, days: number): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
 }
 
 function todayStr(): string {
@@ -101,10 +101,28 @@ export default function AdminPage() {
   const [pwError, setPwError] = useState('');
 
   const [date, setDate] = useState(todayStr);
+  const [currentMonth, setCurrentMonth] = useState(() => todayStr().slice(0, 7));
+  const [calendarData, setCalendarData] = useState<CalendarDay[]>([]);
   const [statusFilter, setStatusFilter] = useState('paid');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState('');
+
+  const fetchCalendar = useCallback(async (month: string) => {
+    if (!password) return;
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/admin/bookings/calendar?month=${month}`,
+        { headers: { Authorization: `Bearer ${password}` } },
+      );
+      if (res.ok) {
+        const data: CalendarDay[] = await res.json();
+        setCalendarData(data);
+      }
+    } catch {
+      // calendar data is non-critical, silently fail
+    }
+  }, [password]);
 
   const fetchBookings = useCallback(async () => {
     if (!password) return;
@@ -141,8 +159,9 @@ export default function AdminPage() {
   useEffect(() => {
     if (authenticated) {
       fetchBookings();
+      fetchCalendar(currentMonth);
     }
-  }, [authenticated, fetchBookings]);
+  }, [authenticated, fetchBookings, fetchCalendar, currentMonth]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -207,7 +226,6 @@ export default function AdminPage() {
 
   const totalPassengers = bookings.reduce((sum, b) => sum + b.passenger_count, 0);
   const totalRevenue = bookings.reduce((sum, b) => sum + b.amount_isk, 0);
-  const isToday = date === todayStr();
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -232,37 +250,19 @@ export default function AdminPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-6 space-y-6">
-        {/* Date navigation */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => setDate((d) => shiftDate(d, -1))}
-            className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 cursor-pointer"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-            </svg>
-          </button>
+        {/* Calendar */}
+        <MiniCalendar
+          selectedDate={date}
+          calendarData={calendarData}
+          onSelectDate={setDate}
+          onMonthChange={(ym) => {
+            setCurrentMonth(ym);
+          }}
+        />
 
-          <div className="text-center">
-            <div className="text-lg font-bold text-slate-900">{formatDate(date)}</div>
-            {!isToday && (
-              <button
-                onClick={() => setDate(todayStr())}
-                className="text-xs text-sky-600 hover:text-sky-500 font-medium mt-0.5 cursor-pointer"
-              >
-                Go to today
-              </button>
-            )}
-          </div>
-
-          <button
-            onClick={() => setDate((d) => shiftDate(d, 1))}
-            className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 cursor-pointer"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-            </svg>
-          </button>
+        {/* Selected date heading */}
+        <div className="text-center">
+          <div className="text-lg font-bold text-slate-900">{formatDate(date)}</div>
         </div>
 
         {/* Status filter */}

@@ -5,10 +5,12 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func
+
 from app.database import Base, engine, get_db
 from app.email import send_confirmation_email
 from app.models import Booking
-from app.schemas import BookingCreated, BookingRequest, BookingResponse
+from app.schemas import BookingCreated, BookingRequest, BookingResponse, CalendarDay
 from app.settings import settings
 from app.straumur import create_payment_link, verify_webhook_hmac
 
@@ -173,6 +175,31 @@ def _verify_admin(authorization: str = Header(...)) -> None:
     token = authorization[len(prefix):]
     if not secrets.compare_digest(token, settings.admin_password):
         raise HTTPException(status_code=401, detail="Invalid password")
+
+
+@app.get("/api/admin/bookings/calendar", response_model=list[CalendarDay])
+def admin_calendar(
+    month: str = Query(..., description="Month in YYYY-MM format"),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    rows = (
+        db.query(
+            Booking.date,
+            func.count(Booking.id).label("count"),
+            func.sum(Booking.passenger_count).label("passengers"),
+        )
+        .filter(
+            Booking.date.like(f"{month}-%"),
+            Booking.status == "paid",
+        )
+        .group_by(Booking.date)
+        .all()
+    )
+    return [
+        CalendarDay(date=row.date, count=row.count, passengers=row.passengers or 0)
+        for row in rows
+    ]
 
 
 @app.get("/api/admin/bookings", response_model=list[BookingResponse])

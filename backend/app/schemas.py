@@ -30,3 +30,9 @@ class BookingResponse(BaseModel):
 class BookingCreated(BaseModel):
     booking_id: str
     payment_url: str
+
+
+class CalendarDay(BaseModel):
+    date: str
+    count: int
+    passengers: int

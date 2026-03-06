@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { API_BASE_URL, PRICE_PER_PASSENGER_ISK, ROUTE } from '../config';
 
 
@@ -261,6 +262,8 @@ export default function BookingForm() {
 
         <p className="text-xs text-slate-400 text-center">
           You will be redirected to a secure payment page to complete your booking.
+          By proceeding, you agree to our{' '}
+          <Link to="/privacy" className="underline hover:text-slate-500">Privacy Policy</Link>.
         </p>
       </form>
     </section>

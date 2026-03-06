@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { API_BASE_URL, PRICE_PER_PASSENGER_ISK, ROUTE } from '../config';
 
-type Direction = 'to_hotel' | 'to_airport';
 
 const TIME_SLOTS = Array.from({ length: 13 }, (_, i) => {
   const hour = (4 + i).toString().padStart(2, '0');
@@ -31,14 +30,14 @@ const COUNTRY_CODES = [
   { code: '+55', flag: '\u{1F1E7}\u{1F1F7}', label: 'Brazil' },
 ];
 
-const MIN_PASSENGERS = 2;
+const MIN_PASSENGERS = 3;
 const MAX_PASSENGERS = 8;
 
 export default function BookingForm() {
-  const [direction, setDirection] = useState<Direction>('to_hotel');
+  const direction = 'to_airport';
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
-  const [passengers, setPassengers] = useState(MIN_PASSENGERS);
+  const [passengers, setPassengers] = useState(3);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [countryCode, setCountryCode] = useState('+354');
@@ -84,65 +83,19 @@ export default function BookingForm() {
     }
   }
 
-  const directionLabel =
-    direction === 'to_hotel'
-      ? `${ROUTE.from} → ${ROUTE.to}`
-      : `${ROUTE.to} → ${ROUTE.from}`;
-
   return (
     <section id="booking" className="max-w-2xl mx-auto px-6 py-16">
       <h2 className="text-2xl font-bold text-slate-900 mb-2 text-center">
         Book Your Ride
       </h2>
       <p className="text-slate-500 text-center mb-8">
-        Fill in the details below and proceed to payment.
+        {ROUTE.to} → {ROUTE.from}
       </p>
 
       <form
         onSubmit={handleSubmit}
         className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 md:p-8 space-y-6"
       >
-        {/* Direction */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
-            Direction
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setDirection('to_hotel')}
-              className={`rounded-lg border px-4 py-3 text-sm font-medium transition-colors cursor-pointer ${
-                direction === 'to_hotel'
-                  ? 'border-sky-500 bg-sky-50 text-sky-700'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
-                </svg>
-                Airport → Hotel
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setDirection('to_airport')}
-              className={`rounded-lg border px-4 py-3 text-sm font-medium transition-colors cursor-pointer ${
-                direction === 'to_airport'
-                  ? 'border-sky-500 bg-sky-50 text-sky-700'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
-                </svg>
-                Hotel → Airport
-              </div>
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-slate-400">{directionLabel}</p>
-        </div>
 
         {/* Date & Time */}
         <div className="grid grid-cols-2 gap-4">

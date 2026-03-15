@@ -26,7 +26,7 @@ app = FastAPI(title="Shuttle Booking API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:5173"],
+    allow_origins=[settings.frontend_url, "http://localhost:5173", "http://localhost:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -143,7 +143,11 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/api/mock-confirm/{booking_id}")
-def mock_confirm_booking(booking_id: str, db: Session = Depends(get_db)):
+def mock_confirm_booking(
+    booking_id: str,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
     """Development-only endpoint to simulate Straumur payment confirmation."""
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:

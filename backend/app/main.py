@@ -142,6 +142,17 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
     return {"status": "ok"}
 
 
+def _verify_admin(authorization: str = Header(...)) -> None:
+    if not settings.admin_password:
+        raise HTTPException(status_code=503, detail="Admin not configured")
+    prefix = "Bearer "
+    if not authorization.startswith(prefix):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    token = authorization[len(prefix):]
+    if not secrets.compare_digest(token, settings.admin_password):
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+
 @app.post("/api/mock-confirm/{booking_id}")
 def mock_confirm_booking(
     booking_id: str,
@@ -168,17 +179,6 @@ def mock_confirm_booking(
     )
 
     return {"status": "confirmed", "booking_id": booking.id}
-
-
-def _verify_admin(authorization: str = Header(...)) -> None:
-    if not settings.admin_password:
-        raise HTTPException(status_code=503, detail="Admin not configured")
-    prefix = "Bearer "
-    if not authorization.startswith(prefix):
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-    token = authorization[len(prefix):]
-    if not secrets.compare_digest(token, settings.admin_password):
-        raise HTTPException(status_code=401, detail="Invalid password")
 
 
 @app.get("/api/admin/bookings/calendar", response_model=list[CalendarDay])

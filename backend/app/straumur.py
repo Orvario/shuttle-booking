@@ -84,23 +84,31 @@ async def create_payment_link(
         "exactSalesCount": 1,
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{_api_base()}/paymentlinks/create",
-            headers={
-                "X-API-Key": settings.straumur_api_key,
-                "Content-Type": "application/json",
-            },
-            json=payload,
-        )
-        if not response.is_success:
-            logger.error(
-                "Straumur API error: status=%s body=%s",
-                response.status_code,
-                response.text,
+    url = f"{_api_base()}/paymentlinks/create"
+    logger.info("Straumur request: POST %s", url)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                headers={
+                    "X-API-Key": settings.straumur_api_key,
+                    "Content-Type": "application/json",
+                },
+                json=payload,
             )
-            response.raise_for_status()
-        data = response.json()
+    except Exception:
+        logger.exception("Straumur connection error for %s", url)
+        raise
+
+    if not response.is_success:
+        logger.error(
+            "Straumur API error: status=%s body=%s",
+            response.status_code,
+            response.text,
+        )
+        response.raise_for_status()
+    data = response.json()
 
     logger.info(
         "Straumur payment link created: ref=%s url=%s",

@@ -19,7 +19,7 @@ from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
-PRODUCTION_URL = "https://checkout-api.straumur.is/api/v1"
+PRODUCTION_URL = "https://api.straumur.is/api/v1"
 STAGING_URL = "https://checkout-api.staging.straumur.is/api/v1"
 
 
@@ -89,12 +89,18 @@ async def create_payment_link(
         response = await client.post(
             f"{_api_base()}/paymentlinks/create",
             headers={
-                "Authorization": f"Bearer {settings.straumur_api_key}",
+                "Authorization": settings.straumur_api_key,
                 "Content-Type": "application/json",
             },
             json=payload,
         )
-        response.raise_for_status()
+        if not response.is_success:
+            logger.error(
+                "Straumur API error: status=%s body=%s",
+                response.status_code,
+                response.text,
+            )
+            response.raise_for_status()
         data = response.json()
 
     logger.info(

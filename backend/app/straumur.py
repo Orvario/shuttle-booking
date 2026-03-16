@@ -19,12 +19,11 @@ from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
-PRODUCTION_URL = "https://api.straumur.is/v1"
-STAGING_URL = "https://checkout-api.staging.straumur.is/api/v1"
+DEFAULT_URL = "https://checkout-api.staging.straumur.is/api/v1"
 
 
 def _api_base() -> str:
-    return settings.straumur_api_base_url or PRODUCTION_URL
+    return settings.straumur_api_base_url or DEFAULT_URL
 
 
 async def create_payment_link(

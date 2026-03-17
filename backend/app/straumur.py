@@ -19,7 +19,7 @@ from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_URL = "https://checkout-api.staging.straumur.is/api/v1"
+DEFAULT_URL = "https://greidslugatt.straumur.is/api/v1"
 
 
 def _api_base() -> str:

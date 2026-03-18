@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 
 Base.metadata.create_all(bind=engine)
 
+with engine.connect() as conn:
+    from sqlalchemy import text, inspect
+    inspector = inspect(engine)
+    columns = [c["name"] for c in inspector.get_columns("bookings")]
+    if "payment_link_reference" not in columns:
+        conn.execute(text(
+            "ALTER TABLE bookings ADD COLUMN payment_link_reference VARCHAR(200)"
+        ))
+        conn.commit()
+        logger.info("Added payment_link_reference column to bookings table")
+
 app = FastAPI(title="Shuttle Booking API")
 
 app.add_middleware(
@@ -67,7 +78,7 @@ async def create_booking(
         if req.direction == "to_hotel"
         else "Flyers Hotel to Airport"
     )
-    payment_url = await create_payment_link(
+    result = await create_payment_link(
         booking_id=booking.id,
         amount_isk=amount,
         description=f"Shuttle {direction_label} - {req.passenger_count} pax",
@@ -75,7 +86,12 @@ async def create_booking(
         email=req.email,
     )
 
-    return BookingCreated(booking_id=booking.id, payment_url=payment_url)
+    if result.reference:
+        booking.payment_link_reference = result.reference
+        db.commit()
+        logger.info("Stored payment link ref %s for booking %s", result.reference, booking.id)
+
+    return BookingCreated(booking_id=booking.id, payment_url=result.url)
 
 
 @app.get("/api/bookings/{booking_id}", response_model=BookingResponse)
@@ -89,6 +105,7 @@ def get_booking(booking_id: str, db: Session = Depends(get_db)):
 @app.post("/api/webhooks/straumur")
 async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.json()
+    logger.info("Straumur webhook received: %s", payload)
 
     event_type = (payload.get("additionalData") or {}).get("eventType", "")
     if event_type != "Authorization":
@@ -107,15 +124,24 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
     if not is_valid:
         raise HTTPException(status_code=400, detail="Invalid HMAC signature")
 
-    booking_id = payload.get("merchantReference")
+    additional_data = payload.get("additionalData") or {}
+    link_id = additional_data.get("paymentLinkIdentifier")
     success = payload.get("success") == "true"
     payfac_ref = payload.get("payfacReference", "")
 
-    if not booking_id:
-        raise HTTPException(status_code=400, detail="Missing merchantReference")
+    booking = None
+    if link_id:
+        booking = (
+            db.query(Booking)
+            .filter(Booking.payment_link_reference == link_id)
+            .first()
+        )
 
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:
+        logger.error(
+            "No booking found for paymentLinkIdentifier=%s",
+            link_id,
+        )
         raise HTTPException(status_code=404, detail="Booking not found")
 
     if success:
@@ -220,12 +246,4 @@ def admin_list_bookings(
 
 @app.get("/health")
 def health():
-    return {
-        "status": "ok",
-        "straumur_api_key_set": bool(settings.straumur_api_key),
-        "straumur_api_key_len": len(settings.straumur_api_key),
-        "straumur_terminal_id_set": bool(settings.straumur_terminal_id),
-        "straumur_hmac_key_set": bool(settings.straumur_hmac_key),
-        "straumur_api_base_url": settings.straumur_api_base_url or "default (greidslugatt.straumur.is)",
-        "frontend_url": settings.frontend_url,
-    }
+    return {"status": "ok"}

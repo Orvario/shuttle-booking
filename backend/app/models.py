@@ -24,6 +24,9 @@ class Booking(Base):
     payment_reference: Mapped[str | None] = mapped_column(
         String(200), nullable=True, default=None
     )
+    payment_link_reference: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, default=None
+    )
     status: Mapped[str] = mapped_column(String(20), default="pending")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow

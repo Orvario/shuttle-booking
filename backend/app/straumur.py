@@ -26,22 +26,30 @@ def _api_base() -> str:
     return settings.straumur_api_base_url or DEFAULT_URL
 
 
+class PaymentLinkResult:
+    def __init__(self, url: str, reference: str | None = None):
+        self.url = url
+        self.reference = reference
+
+
 async def create_payment_link(
     booking_id: str,
     amount_isk: int,
     description: str,
     passenger_name: str,
     email: str,
-) -> str:
-    """Create a Straumur pay-by-link and return the payment URL."""
+) -> PaymentLinkResult:
+    """Create a Straumur pay-by-link and return the payment URL + reference."""
 
     if not settings.straumur_api_key:
         logger.warning(
             "Straumur API key not configured -- using mock payment redirect"
         )
-        return (
-            f"{settings.frontend_url}/success"
-            f"?booking_id={booking_id}&mock_payment=true"
+        return PaymentLinkResult(
+            url=(
+                f"{settings.frontend_url}/success"
+                f"?booking_id={booking_id}&mock_payment=true"
+            ),
         )
 
     amount_minor = amount_isk * 100
@@ -51,8 +59,7 @@ async def create_payment_link(
         "terminalIdentifier": settings.straumur_terminal_id,
         "amount": amount_minor,
         "currency": "ISK",
-        "merchantReference": booking_id,
-        "description": description,
+        "description": f"Booking {booking_id}: {description}",
         "returnUrl": (
             f"{settings.frontend_url}/success?booking_id={booking_id}"
         ),
@@ -119,13 +126,14 @@ async def create_payment_link(
         )
     data = response.json()
 
+    ref = data.get("paymentLinkReference")
     logger.info(
         "Straumur payment link created: ref=%s url=%s",
-        data.get("paymentLinkReference"),
+        ref,
         data.get("url"),
     )
 
-    return data["url"]
+    return PaymentLinkResult(url=data["url"], reference=ref)
 
 
 def verify_webhook_hmac(

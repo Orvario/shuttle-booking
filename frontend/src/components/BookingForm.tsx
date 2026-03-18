@@ -70,7 +70,12 @@ export default function BookingForm() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail || 'Failed to create booking');
+        const detail = body?.detail;
+        const message =
+          typeof detail === 'string'
+            ? detail
+            : detail?.error || 'Failed to create booking';
+        throw new Error(message);
       }
 
       const data = await res.json();

@@ -118,7 +118,7 @@ async def create_payment_link(
         from fastapi import HTTPException
         raise HTTPException(
             status_code=502,
-            detail="Payment gateway error. Please try again later.",
+            detail=f"Straumur {response.status_code}: {response.text[:500]}",
         )
     data = response.json()
 

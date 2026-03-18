@@ -220,4 +220,12 @@ def admin_list_bookings(
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "straumur_api_key_set": bool(settings.straumur_api_key),
+        "straumur_api_key_len": len(settings.straumur_api_key),
+        "straumur_terminal_id_set": bool(settings.straumur_terminal_id),
+        "straumur_hmac_key_set": bool(settings.straumur_hmac_key),
+        "straumur_api_base_url": settings.straumur_api_base_url or "default (greidslugatt.straumur.is)",
+        "frontend_url": settings.frontend_url,
+    }

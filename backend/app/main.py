@@ -284,6 +284,7 @@ def admin_calendar(
         )
         .filter(
             Booking.date.like(f"{month}-%"),
+            Booking.status == "paid",
         )
         .group_by(Booking.date)
         .all()
@@ -297,14 +298,15 @@ def admin_calendar(
 @app.get("/api/admin/bookings", response_model=list[BookingResponse])
 def admin_list_bookings(
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
-    status: str = Query("all", description="Filter by status: paid, pending, failed, or all"),
     db: Session = Depends(get_db),
     _auth: None = Depends(_verify_admin),
 ):
-    query = db.query(Booking).filter(Booking.date == date)
-    if status != "all":
-        query = query.filter(Booking.status == status)
-    return query.order_by(Booking.time).all()
+    return (
+        db.query(Booking)
+        .filter(Booking.date == date, Booking.status == "paid")
+        .order_by(Booking.time)
+        .all()
+    )
 
 
 @app.get("/api/admin/bookings/recent", response_model=list[BookingResponse])

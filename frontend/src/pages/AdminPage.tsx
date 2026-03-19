@@ -35,12 +35,6 @@ function todayStr(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  paid: 'bg-emerald-100 text-emerald-700',
-  pending: 'bg-amber-100 text-amber-700',
-  failed: 'bg-red-100 text-red-700',
-};
-
 const REFRESH_INTERVAL_MS = 60_000;
 
 function BookingCard({ booking }: { booking: Booking }) {
@@ -67,11 +61,6 @@ function BookingCard({ booking }: { booking: Booking }) {
         >
           {booking.phone}
         </a>
-        <span
-          className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[booking.status] || 'bg-slate-100 text-slate-600'}`}
-        >
-          {booking.status}
-        </span>
       </div>
     </div>
   );
@@ -103,7 +92,6 @@ export default function AdminPage() {
   const [date, setDate] = useState(todayStr);
   const [currentMonth, setCurrentMonth] = useState(() => todayStr().slice(0, 7));
   const [calendarData, setCalendarData] = useState<CalendarDay[]>([]);
-  const [statusFilter, setStatusFilter] = useState('all');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState('');
@@ -131,7 +119,7 @@ export default function AdminPage() {
 
     try {
       const res = await fetch(
-        `${API_BASE_URL}/api/admin/bookings?date=${date}&status=${statusFilter}`,
+        `${API_BASE_URL}/api/admin/bookings?date=${date}`,
         { headers: { Authorization: `Bearer ${password}` } },
       );
 
@@ -154,7 +142,7 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }, [password, date, statusFilter]);
+  }, [password, date]);
 
   useEffect(() => {
     if (authenticated) {
@@ -265,23 +253,6 @@ export default function AdminPage() {
           <div className="text-lg font-bold text-slate-900">{formatDate(date)}</div>
         </div>
 
-        {/* Status filter */}
-        <div className="flex gap-2">
-          {(['paid', 'pending', 'all'] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`text-sm font-medium px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
-                statusFilter === s
-                  ? 'bg-sky-500 text-white'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
-              }`}
-            >
-              {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
-        </div>
-
         {/* Summary stats */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white border border-slate-200 rounded-xl p-4 text-center">
@@ -319,7 +290,7 @@ export default function AdminPage() {
               </svg>
             </div>
             <p className="text-slate-500 font-medium">No bookings for this date</p>
-            <p className="text-sm text-slate-400 mt-1">Try a different date or status filter</p>
+            <p className="text-sm text-slate-400 mt-1">Select a different date to see bookings</p>
           </div>
         )}
 

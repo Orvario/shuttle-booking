@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.database import Base, engine, get_db
-from app.email import send_confirmation_email
+from app.email import send_confirmation_email, send_hotel_notification
 from app.models import Booking
 from app.schemas import BookingCreated, BookingRequest, BookingResponse, CalendarDay
 from app.settings import settings
@@ -91,10 +91,17 @@ async def create_booking(
         email=req.email,
     )
 
+    logger.info(
+        "Payment link result for booking %s: url=%s reference=%s",
+        booking.id, result.url, result.reference,
+    )
+
     if result.reference:
         booking.payment_link_reference = result.reference
         db.commit()
         logger.info("Stored payment link ref %s for booking %s", result.reference, booking.id)
+    else:
+        logger.warning("No payment link reference returned for booking %s", booking.id)
 
     return BookingCreated(booking_id=booking.id, payment_url=result.url)
 
@@ -109,11 +116,16 @@ def get_booking(booking_id: str, db: Session = Depends(get_db)):
 
 @app.post("/api/webhooks/straumur")
 async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
+    raw_body = await request.body()
+    logger.info("Straumur webhook raw body: %s", raw_body.decode("utf-8", errors="replace"))
+
     payload = await request.json()
-    logger.info("Straumur webhook received: %s", payload)
+    logger.info("Straumur webhook parsed: %s", payload)
 
     event_type = (payload.get("additionalData") or {}).get("eventType", "")
+    logger.info("Webhook eventType=%s", event_type)
     if event_type != "Authorization":
+        logger.info("Ignoring non-Authorization event: %s", event_type)
         return {"status": "ignored", "event": event_type}
 
     is_valid = verify_webhook_hmac(
@@ -127,12 +139,20 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
         received_signature=payload.get("hmacSignature", ""),
     )
     if not is_valid:
+        logger.error("HMAC verification failed for webhook payload")
         raise HTTPException(status_code=400, detail="Invalid HMAC signature")
+
+    logger.info("HMAC verification passed")
 
     additional_data = payload.get("additionalData") or {}
     link_id = additional_data.get("paymentLinkIdentifier")
     success = payload.get("success") == "true"
     payfac_ref = payload.get("payfacReference", "")
+
+    logger.info(
+        "Looking up booking: paymentLinkIdentifier=%s success=%s payfacRef=%s",
+        link_id, success, payfac_ref,
+    )
 
     booking = None
     if link_id:
@@ -143,11 +163,27 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
         )
 
     if not booking:
+        pending_count = db.query(Booking).filter(Booking.status == "pending").count()
         logger.error(
-            "No booking found for paymentLinkIdentifier=%s",
-            link_id,
+            "No booking found for paymentLinkIdentifier=%s "
+            "(pending bookings in DB: %d)",
+            link_id, pending_count,
         )
+        if pending_count > 0:
+            recent = (
+                db.query(Booking)
+                .filter(Booking.status == "pending")
+                .order_by(Booking.created_at.desc())
+                .first()
+            )
+            logger.error(
+                "Most recent pending booking: id=%s ref=%s email=%s created=%s",
+                recent.id, recent.payment_link_reference,
+                recent.email, recent.created_at,
+            )
         raise HTTPException(status_code=404, detail="Booking not found")
+
+    logger.info("Found booking %s for link_id %s", booking.id, link_id)
 
     if success:
         booking.status = "paid"
@@ -164,6 +200,17 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
             time=booking.time,
             passenger_count=booking.passenger_count,
             amount_isk=booking.amount_isk,
+        )
+
+        send_hotel_notification(
+            passenger_name=booking.passenger_name,
+            direction=booking.direction,
+            date=booking.date,
+            time=booking.time,
+            passenger_count=booking.passenger_count,
+            amount_isk=booking.amount_isk,
+            email=booking.email,
+            phone=booking.phone or "",
         )
     else:
         booking.status = "failed"
@@ -209,6 +256,17 @@ def mock_confirm_booking(
         amount_isk=booking.amount_isk,
     )
 
+    send_hotel_notification(
+        passenger_name=booking.passenger_name,
+        direction=booking.direction,
+        date=booking.date,
+        time=booking.time,
+        passenger_count=booking.passenger_count,
+        amount_isk=booking.amount_isk,
+        email=booking.email,
+        phone=booking.phone or "",
+    )
+
     return {"status": "confirmed", "booking_id": booking.id}
 
 
@@ -247,6 +305,20 @@ def admin_list_bookings(
     if status != "all":
         query = query.filter(Booking.status == status)
     return query.order_by(Booking.time).all()
+
+
+@app.get("/api/admin/bookings/recent", response_model=list[BookingResponse])
+def admin_recent_bookings(
+    limit: int = Query(10, description="Number of recent bookings"),
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    return (
+        db.query(Booking)
+        .order_by(Booking.created_at.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 @app.get("/health")

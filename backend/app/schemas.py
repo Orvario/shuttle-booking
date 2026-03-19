@@ -23,6 +23,7 @@ class BookingResponse(BaseModel):
     email: str
     phone: str
     amount_isk: int
+    payment_link_reference: str | None = None
     status: str
     created_at: datetime
 

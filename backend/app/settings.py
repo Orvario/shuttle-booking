@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # Resend email
     resend_api_key: str = ""
     email_from: str = "bookings@flyershotel.is"
+    hotel_notification_email: str = "stay@flyershotel.com"
 
     # URLs
     frontend_url: str = "http://localhost:5173"

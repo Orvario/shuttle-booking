@@ -323,6 +323,16 @@ def admin_recent_bookings(
     )
 
 
+@app.delete("/api/admin/bookings/purge")
+def admin_purge_unpaid(
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    count = db.query(Booking).filter(Booking.status != "paid").delete()
+    db.commit()
+    return {"deleted": count}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

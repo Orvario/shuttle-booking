@@ -31,14 +31,15 @@ const COUNTRY_CODES = [
   { code: '+55', flag: '\u{1F1E7}\u{1F1F7}', label: 'Brazil' },
 ];
 
-const MIN_PASSENGERS = 3;
+const MIN_PASSENGERS = 2;
 const MAX_PASSENGERS = 8;
+const MIN_ADVANCE_HOURS = 24;
 
 export default function BookingForm() {
   const direction = 'to_airport';
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
-  const [passengers, setPassengers] = useState(3);
+  const [passengers, setPassengers] = useState(2);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [countryCode, setCountryCode] = useState('+354');
@@ -54,6 +55,13 @@ export default function BookingForm() {
     setSubmitting(true);
 
     try {
+      const bookingDateTime = new Date(`${date}T${time}`);
+      const now = new Date();
+      const hoursUntil = (bookingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+      if (hoursUntil < MIN_ADVANCE_HOURS) {
+        throw new Error(`Bookings must be made at least ${MIN_ADVANCE_HOURS} hours in advance.`);
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/bookings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -115,7 +123,7 @@ export default function BookingForm() {
               required
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              min={new Date().toISOString().split('T')[0]}
+              min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
               className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
             />
           </div>

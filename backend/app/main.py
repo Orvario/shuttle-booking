@@ -56,8 +56,18 @@ async def create_booking(
 ):
     if req.direction != "to_airport":
         raise HTTPException(status_code=400, detail="Only hotel-to-airport shuttles available")
-    if req.passenger_count < 3 or req.passenger_count > 8:
-        raise HTTPException(status_code=400, detail="3-8 passengers allowed")
+    if req.passenger_count < 2 or req.passenger_count > 8:
+        raise HTTPException(status_code=400, detail="2-8 passengers allowed")
+
+    from datetime import datetime, timedelta, timezone
+    try:
+        booking_dt = datetime.strptime(f"{req.date} {req.time}", "%Y-%m-%d %H:%M")
+        booking_dt = booking_dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date or time format")
+    min_dt = datetime.now(timezone.utc) + timedelta(hours=24)
+    if booking_dt < min_dt:
+        raise HTTPException(status_code=400, detail="Bookings must be made at least 24 hours in advance")
 
     amount = req.passenger_count * settings.price_per_passenger_isk
 

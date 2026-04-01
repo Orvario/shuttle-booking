@@ -37,6 +37,45 @@ function todayStr(): string {
 
 const REFRESH_INTERVAL_MS = 60_000;
 
+function PendingBookingCard({
+  booking,
+  onConfirm,
+  confirming,
+}: {
+  booking: Booking;
+  onConfirm: (id: string) => void;
+  confirming: string | null;
+}) {
+  const isConfirming = confirming === booking.id;
+  const created = new Date(booking.created_at);
+  const createdLabel = created.toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="min-w-0">
+          <div className="font-medium text-slate-900 truncate">{booking.passenger_name}</div>
+          <div className="text-sm text-slate-600">
+            {booking.passenger_count} pax &middot; {booking.date} {booking.time} &middot; {booking.amount_isk.toLocaleString()} ISK
+          </div>
+          <div className="text-xs text-slate-400 mt-0.5">
+            {booking.email} &middot; {booking.phone} &middot; Created {createdLabel}
+          </div>
+        </div>
+      </div>
+      <button
+        onClick={() => onConfirm(booking.id)}
+        disabled={isConfirming}
+        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-300 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer disabled:cursor-wait flex-shrink-0"
+      >
+        {isConfirming ? 'Confirming...' : 'Confirm & Send Emails'}
+      </button>
+    </div>
+  );
+}
+
 function BookingCard({ booking }: { booking: Booking }) {
   const directionLabel =
     booking.direction === 'to_hotel' ? 'Airport \u2192 Hotel' : 'Hotel \u2192 Airport';
@@ -96,6 +135,10 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState('');
 
+  const [pendingBookings, setPendingBookings] = useState<Booking[]>([]);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [confirmSuccess, setConfirmSuccess] = useState('');
+
   const fetchCalendar = useCallback(async (month: string) => {
     if (!password) return;
     try {
@@ -144,18 +187,67 @@ export default function AdminPage() {
     }
   }, [password, date]);
 
+  const fetchPendingBookings = useCallback(async () => {
+    if (!password) return;
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/admin/bookings/recent?limit=50`,
+        { headers: { Authorization: `Bearer ${password}` } },
+      );
+      if (res.ok) {
+        const data: Booking[] = await res.json();
+        setPendingBookings(data.filter((b) => b.status === 'pending'));
+      }
+    } catch {
+      // non-critical, pending list will just be empty
+    }
+  }, [password]);
+
+  async function handleConfirmBooking(bookingId: string) {
+    setConfirmingId(bookingId);
+    setConfirmSuccess('');
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/mock-confirm/${bookingId}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${password}` },
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || `Failed: ${res.status}`);
+      }
+      const confirmed = pendingBookings.find((b) => b.id === bookingId);
+      setConfirmSuccess(
+        `Booking confirmed for ${confirmed?.passenger_name ?? bookingId}. Emails sent.`,
+      );
+      fetchPendingBookings();
+      fetchBookings();
+      fetchCalendar(currentMonth);
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : 'Failed to confirm booking');
+    } finally {
+      setConfirmingId(null);
+    }
+  }
+
   useEffect(() => {
     if (authenticated) {
       fetchBookings();
+      fetchPendingBookings();
       fetchCalendar(currentMonth);
     }
-  }, [authenticated, fetchBookings, fetchCalendar, currentMonth]);
+  }, [authenticated, fetchBookings, fetchPendingBookings, fetchCalendar, currentMonth]);
 
   useEffect(() => {
     if (!authenticated) return;
-    const interval = setInterval(fetchBookings, REFRESH_INTERVAL_MS);
+    const interval = setInterval(() => {
+      fetchBookings();
+      fetchPendingBookings();
+    }, REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [authenticated, fetchBookings]);
+  }, [authenticated, fetchBookings, fetchPendingBookings]);
 
   function handleLogin(e: FormEvent) {
     e.preventDefault();
@@ -247,6 +339,44 @@ export default function AdminPage() {
             setCurrentMonth(ym);
           }}
         />
+
+        {/* Pending bookings alert */}
+        {pendingBookings.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-500 text-white text-xs font-bold">
+                {pendingBookings.length}
+              </span>
+              <h2 className="text-base font-bold text-slate-900">
+                Pending Bookings
+              </h2>
+              <span className="text-sm text-slate-400">
+                — paid but webhook may have failed
+              </span>
+            </div>
+            {pendingBookings.map((b) => (
+              <PendingBookingCard
+                key={b.id}
+                booking={b}
+                onConfirm={handleConfirmBooking}
+                confirming={confirmingId}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Confirm success banner */}
+        {confirmSuccess && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-sm text-emerald-700 flex items-center justify-between">
+            <span>{confirmSuccess}</span>
+            <button
+              onClick={() => setConfirmSuccess('')}
+              className="text-emerald-400 hover:text-emerald-600 cursor-pointer ml-4"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Selected date heading */}
         <div className="text-center">

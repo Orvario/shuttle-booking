@@ -14,6 +14,19 @@ from app.schemas import BookingCreated, BookingRequest, BookingResponse, Calenda
 from app.settings import settings
 from app.straumur import create_payment_link, verify_webhook_hmac
 
+ALLOWED_TIMES = {"05:00", "06:00", "07:00", "14:00"}
+
+PRICE_TABLE_ISK = {
+    1: 4400,
+    2: 4400,
+    3: 5100,
+    4: 5800,
+    5: 6500,
+    6: 7200,
+    7: 7900,
+    8: 8000,
+}
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -56,8 +69,10 @@ async def create_booking(
 ):
     if req.direction != "to_airport":
         raise HTTPException(status_code=400, detail="Only hotel-to-airport shuttles available")
-    if req.passenger_count < 2 or req.passenger_count > 8:
-        raise HTTPException(status_code=400, detail="2-8 passengers allowed")
+    if req.passenger_count < 1 or req.passenger_count > 8:
+        raise HTTPException(status_code=400, detail="1-8 passengers allowed")
+    if req.time not in ALLOWED_TIMES:
+        raise HTTPException(status_code=400, detail="Invalid departure time")
 
     from datetime import datetime, timedelta, timezone
     try:
@@ -69,7 +84,7 @@ async def create_booking(
     if booking_dt < min_dt:
         raise HTTPException(status_code=400, detail="Bookings must be made at least 24 hours in advance")
 
-    amount = req.passenger_count * settings.price_per_passenger_isk
+    amount = PRICE_TABLE_ISK[req.passenger_count]
 
     booking = Booking(
         direction=req.direction,

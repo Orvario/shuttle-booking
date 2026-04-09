@@ -1,12 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { API_BASE_URL, PRICE_PER_PASSENGER_ISK, ROUTE } from '../config';
-
-
-const TIME_SLOTS = Array.from({ length: 13 }, (_, i) => {
-  const hour = (4 + i).toString().padStart(2, '0');
-  return `${hour}:30`;
-});
+import { API_BASE_URL, PRICE_TABLE_ISK, TIME_SLOTS, ROUTE } from '../config';
 
 const COUNTRY_CODES = [
   { code: '+354', flag: '\u{1F1EE}\u{1F1F8}', label: 'Iceland' },
@@ -31,7 +25,7 @@ const COUNTRY_CODES = [
   { code: '+55', flag: '\u{1F1E7}\u{1F1F7}', label: 'Brazil' },
 ];
 
-const MIN_PASSENGERS = 2;
+const MIN_PASSENGERS = 1;
 const MAX_PASSENGERS = 8;
 const MIN_ADVANCE_HOURS = 24;
 
@@ -39,7 +33,7 @@ export default function BookingForm() {
   const direction = 'to_airport';
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
-  const [passengers, setPassengers] = useState(2);
+  const [passengers, setPassengers] = useState(1);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [countryCode, setCountryCode] = useState('+354');
@@ -47,7 +41,7 @@ export default function BookingForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const totalPrice = passengers * PRICE_PER_PASSENGER_ISK;
+  const totalPrice = PRICE_TABLE_ISK[passengers] ?? 0;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -247,7 +241,7 @@ export default function BookingForm() {
         {/* Price summary */}
         <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
           <div className="flex items-center justify-between text-sm text-slate-600 mb-1">
-            <span>{passengers} passenger{passengers > 1 ? 's' : ''} × {PRICE_PER_PASSENGER_ISK.toLocaleString()} ISK</span>
+            <span>{passengers} passenger{passengers > 1 ? 's' : ''}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-lg font-bold text-slate-900">Total</span>

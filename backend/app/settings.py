@@ -18,8 +18,9 @@ class Settings(BaseSettings):
     # URLs
     frontend_url: str = "http://localhost:5173"
 
-    # Pricing
-    price_per_passenger_isk: int = 2200
+    # Pricing (total ISK by passenger count)
+    # Configured as default; override via env if needed
+    price_per_passenger_isk: int = 2200  # legacy fallback, unused
 
     # Admin dashboard
     admin_password: str = ""

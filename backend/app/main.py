@@ -4,6 +4,7 @@ import secrets
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from sqlalchemy import func
@@ -226,7 +227,16 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
                 recent.id, recent.payment_link_reference,
                 recent.email, recent.created_at,
             )
-        raise HTTPException(status_code=404, detail="Booking not found")
+        # 200 so the gateway treats the webhook URL as valid (avoids 404 in access
+        # logs looking like a missing route). Correlation failure is in body + logs.
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "error",
+                "error": "booking_not_found",
+                "paymentLinkIdentifier": link_id,
+            },
+        )
 
     logger.info("Found booking %s for link_id %s", booking.id, link_id)
 

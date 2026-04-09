@@ -191,7 +191,10 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
 
     logger.info("HMAC verification passed")
 
-    link_id = additional_data.get("paymentLinkIdentifier")
+    link_id = (
+        additional_data.get("paymentLinkReference")
+        or additional_data.get("paymentLinkIdentifier")
+    )
     success = _webhook_success(payload)
     payfac_ref = payload.get("payfacReference", "")
 
@@ -238,7 +241,11 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
             },
         )
 
-    logger.info("Found booking %s for link_id %s", booking.id, link_id)
+    logger.info("Found booking %s (status=%s) for link_id %s", booking.id, booking.status, link_id)
+
+    if booking.status == "paid":
+        logger.info("Booking %s already paid — ignoring duplicate webhook", booking.id)
+        return {"status": "ok", "detail": "already_paid"}
 
     if success:
         booking.status = "paid"

@@ -1,4 +1,4 @@
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { API_BASE_URL } from '../config';
 
@@ -87,12 +87,12 @@ export default function SuccessPage() {
           </div>
         )}
 
-        <Link
-          to="/"
+        <a
+          href="https://flyershotel.com/"
           className="inline-block bg-sky-500 hover:bg-sky-400 text-white font-medium px-6 py-2.5 rounded-xl transition-colors"
         >
-          Back to Home
-        </Link>
+          Back to Flyers Hotel
+        </a>
       </div>
     </div>
   );

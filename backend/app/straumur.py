@@ -156,14 +156,23 @@ def verify_webhook_hmac(
         )
         return True
 
+    # Gateway fields are string-valued in docs; coerce so bool/number payloads
+    # still verify and ":".join does not raise.
+    def _s(v: object) -> str:
+        if v is None:
+            return ""
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        return str(v)
+
     values = [
-        checkout_reference or "",
-        payfac_reference,
-        merchant_reference or "",
-        amount,
-        currency,
-        reason or "",
-        success,
+        _s(checkout_reference),
+        _s(payfac_reference),
+        _s(merchant_reference),
+        _s(amount),
+        _s(currency),
+        _s(reason),
+        _s(success),
     ]
     payload_str = ":".join(values)
     payload_bytes = payload_str.encode("utf-8")
@@ -176,4 +185,4 @@ def verify_webhook_hmac(
     computed = hmac.new(key_bytes, payload_bytes, hashlib.sha256).digest()
     computed_b64 = base64.b64encode(computed).decode("utf-8")
 
-    return hmac.compare_digest(computed_b64, received_signature)
+    return hmac.compare_digest(computed_b64, received_signature or "")

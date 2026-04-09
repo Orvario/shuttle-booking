@@ -35,7 +35,8 @@ function todayStr(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-const REFRESH_INTERVAL_MS = 60_000;
+/** Background refresh only while the admin tab is visible; paused when in another tab or minimized. */
+const REFRESH_INTERVAL_MS = 120_000;
 
 function PendingBookingCard({
   booking,
@@ -242,11 +243,45 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!authenticated) return;
-    const interval = setInterval(() => {
+
+    const refresh = () => {
       fetchBookings();
       fetchPendingBookings();
-    }, REFRESH_INTERVAL_MS);
-    return () => clearInterval(interval);
+    };
+
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+
+    const startPolling = () => {
+      if (intervalId !== undefined) return;
+      intervalId = setInterval(refresh, REFRESH_INTERVAL_MS);
+    };
+
+    const stopPolling = () => {
+      if (intervalId !== undefined) {
+        clearInterval(intervalId);
+        intervalId = undefined;
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        refresh();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    if (document.visibilityState === 'visible') {
+      startPolling();
+    }
+
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [authenticated, fetchBookings, fetchPendingBookings]);
 
   function handleLogin(e: FormEvent) {

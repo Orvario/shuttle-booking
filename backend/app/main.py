@@ -1,3 +1,4 @@
+import json
 import logging
 import secrets
 
@@ -139,18 +140,38 @@ def get_booking(booking_id: str, db: Session = Depends(get_db)):
     return booking
 
 
+def _webhook_success(payload: dict) -> bool:
+    """Straumur docs show success as the string 'true'/'false'; accept booleans too."""
+    raw = payload.get("success")
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).lower() == "true"
+
+
 @app.post("/api/webhooks/straumur")
 async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
     raw_body = await request.body()
-    logger.info("Straumur webhook raw body: %s", raw_body.decode("utf-8", errors="replace"))
+    raw_text = raw_body.decode("utf-8", errors="replace")
+    logger.info("Straumur webhook raw body: %s", raw_text)
 
-    payload = await request.json()
+    try:
+        payload = json.loads(raw_body)
+    except json.JSONDecodeError as e:
+        logger.error("Straumur webhook invalid JSON: %s", e)
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from e
+
     logger.info("Straumur webhook parsed: %s", payload)
 
-    event_type = (payload.get("additionalData") or {}).get("eventType", "")
+    additional_data = payload.get("additionalData")
+    if not isinstance(additional_data, dict):
+        additional_data = {}
+    event_type = (additional_data.get("eventType") or "").strip()
     logger.info("Webhook eventType=%s", event_type)
-    if event_type != "Authorization":
-        logger.info("Ignoring non-Authorization event: %s", event_type)
+    if event_type.lower() != "authorization":
+        logger.warning(
+            "Ignoring non-Authorization event: %r (only Authorization is processed)",
+            event_type,
+        )
         return {"status": "ignored", "event": event_type}
 
     is_valid = verify_webhook_hmac(
@@ -169,9 +190,8 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
 
     logger.info("HMAC verification passed")
 
-    additional_data = payload.get("additionalData") or {}
     link_id = additional_data.get("paymentLinkIdentifier")
-    success = payload.get("success") == "true"
+    success = _webhook_success(payload)
     payfac_ref = payload.get("payfacReference", "")
 
     logger.info(

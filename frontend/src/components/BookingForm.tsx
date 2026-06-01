@@ -27,7 +27,7 @@ const COUNTRY_CODES = [
 
 const MIN_PASSENGERS = 1;
 const MAX_PASSENGERS = 8;
-const MIN_ADVANCE_HOURS = 24;
+const CUTOFF_HOUR = 22;
 
 export default function BookingForm() {
   const direction = 'to_airport';
@@ -49,11 +49,12 @@ export default function BookingForm() {
     setSubmitting(true);
 
     try {
-      const bookingDateTime = new Date(`${date}T${time}`);
-      const now = new Date();
-      const hoursUntil = (bookingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
-      if (hoursUntil < MIN_ADVANCE_HOURS) {
-        throw new Error(`Bookings must be made at least ${MIN_ADVANCE_HOURS} hours in advance.`);
+      const departureDateObj = new Date(`${date}T00:00:00`);
+      const cutoff = new Date(departureDateObj);
+      cutoff.setDate(cutoff.getDate() - 1);
+      cutoff.setHours(CUTOFF_HOUR, 0, 0, 0);
+      if (new Date() >= cutoff) {
+        throw new Error('Bookings must be made before 10:00 pm the day before departure.');
       }
 
       const res = await fetch(`${API_BASE_URL}/api/bookings`, {

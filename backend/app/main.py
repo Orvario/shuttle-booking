@@ -82,9 +82,13 @@ async def create_booking(
         booking_dt = booking_dt.replace(tzinfo=timezone.utc)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date or time format")
-    min_dt = datetime.now(timezone.utc) + timedelta(hours=24)
-    if booking_dt < min_dt:
-        raise HTTPException(status_code=400, detail="Bookings must be made at least 24 hours in advance")
+    now = datetime.now(timezone.utc)
+    cutoff = (booking_dt - timedelta(days=1)).replace(hour=22, minute=0, second=0, microsecond=0)
+    if now >= cutoff:
+        raise HTTPException(
+            status_code=400,
+            detail="Bookings must be made before 10:00 pm the day before departure",
+        )
 
     amount = PRICE_TABLE_ISK[req.passenger_count]
 

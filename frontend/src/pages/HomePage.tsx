@@ -21,7 +21,7 @@ export default function HomePage() {
       <section className="max-w-xl mx-auto px-6 py-10 text-center">
         <h2 className="text-base font-semibold text-slate-700 mb-2">Shuttle Booking Policy</h2>
         <p className="text-sm text-slate-500 leading-relaxed">
-          All shuttle bookings must be made at least 24 hours in advance to guarantee availability.
+          All shuttle bookings must be done in advance before 10:00 pm the day before departure to guarantee availability.
         </p>
         <p className="text-sm text-slate-500 leading-relaxed mt-2">
           If you require a shuttle with shorter notice, please contact us directly by phone at{' '}

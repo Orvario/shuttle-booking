@@ -12,9 +12,20 @@ from sqlalchemy import func
 from app.database import Base, engine, get_db
 from app.email import send_confirmation_email, send_hotel_notification
 from app.models import Booking
-from app.schemas import BookingCreated, BookingRequest, BookingResponse, CalendarDay
+from app.schemas import (
+    BookingCreated,
+    BookingPayment,
+    BookingRequest,
+    BookingResponse,
+    CalendarDay,
+)
 from app.settings import settings
-from app.straumur import create_payment_link, verify_webhook_hmac
+from app.straumur import (
+    PaymentLinkResult,
+    create_payment_link,
+    get_payment_link_details,
+    verify_webhook_hmac,
+)
 
 ALLOWED_TIMES = {"05:00", "06:00", "07:00", "14:00"}
 
@@ -28,6 +39,8 @@ PRICE_TABLE_ISK = {
     7: 7900,
     8: 8000,
 }
+
+PENDING_BOOKING_WINDOW_HOURS = 24
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,6 +60,13 @@ with engine.connect() as conn:
         ))
         conn.commit()
         logger.info("Added payment_link_reference column to bookings table")
+    columns = [c["name"] for c in inspector.get_columns("bookings")]
+    if "payment_url" not in columns:
+        conn.execute(text(
+            "ALTER TABLE bookings ADD COLUMN payment_url VARCHAR(500)"
+        ))
+        conn.commit()
+        logger.info("Added payment_url column to bookings table")
 
 app = FastAPI(title="Shuttle Booking API")
 
@@ -62,6 +82,79 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _success_page_url(booking_id: str) -> str:
+    return f"{settings.frontend_url}/success?booking_id={booking_id}"
+
+
+def _find_recent_duplicate(
+    db: Session,
+    req: BookingRequest,
+) -> Booking | None:
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=PENDING_BOOKING_WINDOW_HOURS)
+    return (
+        db.query(Booking)
+        .filter(
+            Booking.email == req.email,
+            Booking.date == req.date,
+            Booking.time == req.time,
+            Booking.direction == req.direction,
+            Booking.status.in_(["pending", "paid"]),
+            Booking.created_at >= cutoff,
+        )
+        .order_by(Booking.created_at.desc())
+        .first()
+    )
+
+
+async def _attach_payment_link(
+    booking: Booking,
+    db: Session,
+    description: str,
+) -> PaymentLinkResult:
+    result = await create_payment_link(
+        booking_id=booking.id,
+        amount_isk=booking.amount_isk,
+        description=description,
+        passenger_name=booking.passenger_name,
+        email=booking.email,
+    )
+    booking.payment_url = result.url
+    if result.reference:
+        booking.payment_link_reference = result.reference
+    db.commit()
+    return result
+
+
+async def _resolve_payment_url(
+    booking: Booking,
+    db: Session,
+    description: str,
+) -> str:
+    if booking.payment_link_reference and settings.straumur_api_key:
+        details = await get_payment_link_details(booking.payment_link_reference)
+        if details:
+            if details.is_payable and details.url:
+                booking.payment_url = details.url
+                db.commit()
+                return details.url
+            if details.status == "Used":
+                logger.info(
+                    "Payment link %s already used for booking %s — "
+                    "awaiting webhook confirmation",
+                    booking.payment_link_reference,
+                    booking.id,
+                )
+                return _success_page_url(booking.id)
+
+    if booking.payment_url and not settings.straumur_api_key:
+        return booking.payment_url
+
+    result = await _attach_payment_link(booking, db, description)
+    return result.url
 
 
 @app.post("/api/bookings", response_model=BookingCreated)
@@ -92,6 +185,41 @@ async def create_booking(
 
     amount = PRICE_TABLE_ISK[req.passenger_count]
 
+    direction_label = (
+        "Airport to Flyers Hotel"
+        if req.direction == "to_hotel"
+        else "Flyers Hotel to Airport"
+    )
+    payment_description = (
+        f"Shuttle {direction_label} - {req.passenger_count} pax"
+    )
+
+    existing = _find_recent_duplicate(db, req)
+    if existing:
+        if existing.status == "paid":
+            logger.info(
+                "Duplicate booking attempt for already-paid booking %s",
+                existing.id,
+            )
+            return BookingCreated(
+                booking_id=existing.id,
+                payment_url=_success_page_url(existing.id),
+                already_paid=True,
+            )
+
+        logger.info(
+            "Resuming pending booking %s for %s (no new charge)",
+            existing.id,
+            req.email,
+        )
+        payment_url = await _resolve_payment_url(
+            existing, db, payment_description
+        )
+        return BookingCreated(
+            booking_id=existing.id,
+            payment_url=payment_url,
+        )
+
     booking = Booking(
         direction=req.direction,
         date=req.date,
@@ -109,30 +237,18 @@ async def create_booking(
 
     logger.info("Booking %s created for %s", booking.id, req.email)
 
-    direction_label = (
-        "Airport to Flyers Hotel"
-        if req.direction == "to_hotel"
-        else "Flyers Hotel to Airport"
-    )
-    result = await create_payment_link(
-        booking_id=booking.id,
-        amount_isk=amount,
-        description=f"Shuttle {direction_label} - {req.passenger_count} pax",
-        passenger_name=req.passenger_name,
-        email=req.email,
-    )
+    result = await _attach_payment_link(booking, db, payment_description)
 
     logger.info(
         "Payment link result for booking %s: url=%s reference=%s",
         booking.id, result.url, result.reference,
     )
 
-    if result.reference:
-        booking.payment_link_reference = result.reference
-        db.commit()
-        logger.info("Stored payment link ref %s for booking %s", result.reference, booking.id)
-    else:
-        logger.warning("No payment link reference returned for booking %s", booking.id)
+    if not result.reference:
+        logger.warning(
+            "No payment link reference returned for booking %s",
+            booking.id,
+        )
 
     return BookingCreated(booking_id=booking.id, payment_url=result.url)
 
@@ -143,6 +259,45 @@ def get_booking(booking_id: str, db: Session = Depends(get_db)):
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     return booking
+
+
+@app.get("/api/bookings/{booking_id}/payment", response_model=BookingPayment)
+async def get_booking_payment(
+    booking_id: str,
+    db: Session = Depends(get_db),
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.status == "paid":
+        return BookingPayment(
+            booking_id=booking.id,
+            payment_url=_success_page_url(booking.id),
+            status=booking.status,
+        )
+
+    if booking.status != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail="This booking cannot be paid. Please start a new booking.",
+        )
+
+    direction_label = (
+        "Airport to Flyers Hotel"
+        if booking.direction == "to_hotel"
+        else "Flyers Hotel to Airport"
+    )
+    payment_url = await _resolve_payment_url(
+        booking,
+        db,
+        f"Shuttle {direction_label} - {booking.passenger_count} pax",
+    )
+    return BookingPayment(
+        booking_id=booking.id,
+        payment_url=payment_url,
+        status=booking.status,
+    )
 
 
 def _webhook_success(payload: dict) -> bool:

@@ -1,6 +1,17 @@
-import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, type FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL, PRICE_TABLE_ISK, TIME_SLOTS, ROUTE } from '../config';
+
+const PENDING_BOOKING_KEY = 'shuttle_pending_booking_id';
+
+interface PendingBooking {
+  id: string;
+  status: string;
+  date: string;
+  time: string;
+  passenger_name: string;
+  amount_isk: number;
+}
 
 const COUNTRY_CODES = [
   { code: '+354', flag: '\u{1F1EE}\u{1F1F8}', label: 'Iceland' },
@@ -30,6 +41,7 @@ const MAX_PASSENGERS = 8;
 const CUTOFF_HOUR = 22;
 
 export default function BookingForm() {
+  const navigate = useNavigate();
   const direction = 'to_airport';
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -39,9 +51,71 @@ export default function BookingForm() {
   const [countryCode, setCountryCode] = useState('+354');
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [error, setError] = useState('');
+  const [pendingBooking, setPendingBooking] = useState<PendingBooking | null>(null);
 
   const totalPrice = PRICE_TABLE_ISK[passengers] ?? 0;
+
+  useEffect(() => {
+    const storedId = sessionStorage.getItem(PENDING_BOOKING_KEY);
+    if (!storedId) return;
+
+    fetch(`${API_BASE_URL}/api/bookings/${storedId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: PendingBooking | null) => {
+        if (!data) {
+          sessionStorage.removeItem(PENDING_BOOKING_KEY);
+          return;
+        }
+        if (data.status === 'paid') {
+          sessionStorage.removeItem(PENDING_BOOKING_KEY);
+          navigate(`/success?booking_id=${data.id}`);
+          return;
+        }
+        if (data.status === 'pending') {
+          setPendingBooking(data);
+        } else {
+          sessionStorage.removeItem(PENDING_BOOKING_KEY);
+        }
+      })
+      .catch(() => {});
+  }, [navigate]);
+
+  async function redirectToPayment(bookingId: string, paymentUrl: string) {
+    sessionStorage.setItem(PENDING_BOOKING_KEY, bookingId);
+    window.location.href = paymentUrl;
+  }
+
+  async function handleResumePayment() {
+    if (!pendingBooking) return;
+    setError('');
+    setResuming(true);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/bookings/${pendingBooking.id}/payment`,
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || 'Could not resume payment');
+      }
+      const data = await res.json();
+      if (data.status === 'paid') {
+        sessionStorage.removeItem(PENDING_BOOKING_KEY);
+        navigate(`/success?booking_id=${data.booking_id}`);
+        return;
+      }
+      await redirectToPayment(data.booking_id, data.payment_url);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not resume payment');
+      setResuming(false);
+    }
+  }
+
+  function dismissPendingBooking() {
+    sessionStorage.removeItem(PENDING_BOOKING_KEY);
+    setPendingBooking(null);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -83,8 +157,15 @@ export default function BookingForm() {
 
       const data = await res.json();
 
+      if (data.already_paid) {
+        sessionStorage.removeItem(PENDING_BOOKING_KEY);
+        navigate(`/success?booking_id=${data.booking_id}`);
+        return;
+      }
+
       if (data.payment_url) {
-        window.location.href = data.payment_url;
+        setPendingBooking(null);
+        await redirectToPayment(data.booking_id, data.payment_url);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -252,6 +333,34 @@ export default function BookingForm() {
           </div>
         </div>
 
+        {pendingBooking && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-900 space-y-3">
+            <p>
+              You have an unfinished payment for{' '}
+              <strong>{pendingBooking.date}</strong> at{' '}
+              <strong>{pendingBooking.time}</strong>. Resume payment instead of
+              booking again to avoid being charged twice.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleResumePayment}
+                disabled={resuming}
+                className="bg-amber-600 hover:bg-amber-500 disabled:bg-amber-300 text-white font-medium px-4 py-2 rounded-lg transition-colors cursor-pointer disabled:cursor-wait"
+              >
+                {resuming ? 'Opening payment...' : 'Resume payment'}
+              </button>
+              <button
+                type="button"
+                onClick={dismissPendingBooking}
+                className="text-amber-800 underline hover:text-amber-900 cursor-pointer"
+              >
+                Start a new booking
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Error */}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
@@ -270,7 +379,9 @@ export default function BookingForm() {
 
         <p className="text-xs text-slate-400 text-center">
           You will be redirected to a secure payment page to complete your booking.
-          By proceeding, you agree to our{' '}
+          If you close the payment window, return here and use{' '}
+          <strong className="text-slate-500">Resume payment</strong> — do not submit
+          the form again. By proceeding, you agree to our{' '}
           <Link to="/privacy" className="underline hover:text-slate-500">Privacy Policy</Link>.
         </p>
       </form>

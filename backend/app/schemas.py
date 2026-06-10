@@ -31,6 +31,13 @@ class BookingResponse(BaseModel):
 class BookingCreated(BaseModel):
     booking_id: str
     payment_url: str
+    already_paid: bool = False
+
+
+class BookingPayment(BaseModel):
+    booking_id: str
+    payment_url: str
+    status: str
 
 
 class CalendarDay(BaseModel):

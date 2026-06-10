@@ -32,6 +32,17 @@ class PaymentLinkResult:
         self.reference = reference
 
 
+class PaymentLinkDetails:
+    def __init__(self, url: str, status: str, reference: str):
+        self.url = url
+        self.status = status
+        self.reference = reference
+
+    @property
+    def is_payable(self) -> bool:
+        return self.status == "Active"
+
+
 async def create_payment_link(
     booking_id: str,
     amount_isk: int,
@@ -130,6 +141,41 @@ async def create_payment_link(
     )
 
     return PaymentLinkResult(url=data["url"], reference=ref)
+
+
+async def get_payment_link_details(
+    payment_link_reference: str,
+) -> PaymentLinkDetails | None:
+    """Fetch payment link status and URL from Straumur."""
+    if not settings.straumur_api_key:
+        return None
+
+    url = f"{_api_base()}/paymentlinks/{payment_link_reference}"
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                headers={"X-API-Key": settings.straumur_api_key},
+            )
+    except Exception:
+        logger.exception("Straumur connection error for %s", url)
+        return None
+
+    if not response.is_success:
+        logger.error(
+            "Straumur get payment link error: status=%s body=%s",
+            response.status_code,
+            response.text,
+        )
+        return None
+
+    link = response.json().get("paymentLink") or {}
+    ref = link.get("paymentLinkReference") or payment_link_reference
+    return PaymentLinkDetails(
+        url=link.get("url", ""),
+        status=link.get("status", ""),
+        reference=ref,
+    )
 
 
 def verify_webhook_hmac(

@@ -1,6 +1,10 @@
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { API_BASE_URL } from '../config';
+
+const PENDING_BOOKING_KEY = 'shuttle_pending_booking_id';
+const POLL_INTERVAL_MS = 2000;
+const POLL_MAX_ATTEMPTS = 15;
 
 interface BookingInfo {
   id: string;
@@ -26,34 +30,104 @@ export default function SuccessPage() {
       return;
     }
 
-    fetch(`${API_BASE_URL}/api/bookings/${bookingId}`)
-      .then((r) => r.json())
-      .then((data) => setBooking(data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    let attempts = 0;
+    let cancelled = false;
+
+    async function fetchBooking() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/bookings/${bookingId}`);
+        if (!res.ok) return;
+        const data: BookingInfo = await res.json();
+        if (cancelled) return;
+        setBooking(data);
+
+        if (data.status === 'paid') {
+          sessionStorage.removeItem(PENDING_BOOKING_KEY);
+          setLoading(false);
+          return;
+        }
+
+        if (data.status === 'failed') {
+          setLoading(false);
+          return;
+        }
+
+        attempts += 1;
+        if (attempts < POLL_MAX_ATTEMPTS) {
+          window.setTimeout(fetchBooking, POLL_INTERVAL_MS);
+        } else {
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    fetchBooking();
+
+    return () => {
+      cancelled = true;
+    };
   }, [bookingId]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-pulse text-slate-400">Loading...</div>
+        <div className="text-center">
+          <div className="animate-pulse text-slate-400 mb-2">Confirming payment...</div>
+          <p className="text-sm text-slate-500">Please wait. Do not pay again.</p>
+        </div>
       </div>
     );
   }
 
+  const isPaid = booking?.status === 'paid';
+  const isFailed = booking?.status === 'failed';
+  const isPending = booking?.status === 'pending';
+
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-6">
       <div className="max-w-md w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center">
-        {/* Success icon */}
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100 mb-6">
-          <svg className="w-8 h-8 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-          </svg>
-        </div>
+        {isPaid && (
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100 mb-6">
+            <svg className="w-8 h-8 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+          </div>
+        )}
 
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Booking Confirmed</h1>
+        {isPending && (
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 mb-6">
+            <svg className="w-8 h-8 text-amber-600 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          </div>
+        )}
+
+        {isFailed && (
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-6">
+            <svg className="w-8 h-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </div>
+        )}
+
+        <h1 className="text-2xl font-bold text-slate-900 mb-2">
+          {isPaid && 'Booking Confirmed'}
+          {isPending && 'Payment Processing'}
+          {isFailed && 'Payment Failed'}
+          {!booking && 'Booking Not Found'}
+        </h1>
+
         <p className="text-slate-500 mb-6">
-          Your shuttle has been booked and paid. A confirmation email will arrive shortly.
+          {isPaid && 'Your shuttle has been booked and paid. A confirmation email will arrive shortly.'}
+          {isPending && (
+            'Your payment is being confirmed. Please do not pay again — '
+            + 'we will email you once the booking is confirmed.'
+          )}
+          {isFailed && 'Your payment could not be completed. No charge has been made.'}
+          {!booking && 'We could not find this booking. Please contact the hotel if you were charged.'}
         </p>
 
         {booking && (
@@ -80,11 +154,24 @@ export default function SuccessPage() {
               <span className="text-slate-500">Name</span>
               <span className="font-medium text-slate-800">{booking.passenger_name}</span>
             </div>
-            <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
-              <span className="text-slate-500">Total Paid</span>
-              <span className="font-bold text-slate-900">{booking.amount_isk.toLocaleString()} ISK</span>
-            </div>
+            {isPaid && (
+              <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
+                <span className="text-slate-500">Total Paid</span>
+                <span className="font-bold text-slate-900">
+                  {booking.amount_isk.toLocaleString()} ISK
+                </span>
+              </div>
+            )}
           </div>
+        )}
+
+        {isFailed && (
+          <Link
+            to="/"
+            className="inline-block bg-sky-500 hover:bg-sky-400 text-white font-medium px-6 py-2.5 rounded-xl transition-colors mb-4"
+          >
+            Try Again
+          </Link>
         )}
 
         <a

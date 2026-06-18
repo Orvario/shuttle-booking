@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { API_BASE_URL, PRICE_TABLE_ISK, TIME_SLOTS, ROUTE } from '../config';
+import { API_BASE_URL, PRICE_TABLE_ISK, ROUTE } from '../config';
 
 const PENDING_BOOKING_KEY = 'shuttle_pending_booking_id';
 
@@ -55,6 +55,8 @@ export default function BookingForm() {
   const [error, setError] = useState('');
   const [pendingBooking, setPendingBooking] = useState<PendingBooking | null>(null);
   const [blackoutDates, setBlackoutDates] = useState<Set<string>>(new Set());
+  const [availableTimes, setAvailableTimes] = useState<string[]>([]);
+  const [timesLoading, setTimesLoading] = useState(false);
 
   const totalPrice = PRICE_TABLE_ISK[passengers] ?? 0;
 
@@ -66,6 +68,27 @@ export default function BookingForm() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!date) {
+      setAvailableTimes([]);
+      setTime('');
+      return;
+    }
+    setTimesLoading(true);
+    fetch(`${API_BASE_URL}/api/shuttle-times?date=${encodeURIComponent(date)}`)
+      .then((r) => (r.ok ? r.json() : { times: [] }))
+      .then((data: { times?: string[] }) => {
+        const times = data.times ?? [];
+        setAvailableTimes(times);
+        setTime((prev) => (prev && times.includes(prev) ? prev : ''));
+      })
+      .catch(() => {
+        setAvailableTimes([]);
+        setTime('');
+      })
+      .finally(() => setTimesLoading(false));
+  }, [date]);
 
   useEffect(() => {
     const storedId = sessionStorage.getItem(PENDING_BOOKING_KEY);
@@ -143,6 +166,10 @@ export default function BookingForm() {
 
       if (blackoutDates.has(date)) {
         throw new Error('This date is not available for booking. Please choose another day.');
+      }
+
+      if (!availableTimes.includes(time)) {
+        throw new Error('Please select a valid departure time for this date.');
       }
 
       const res = await fetch(`${API_BASE_URL}/api/bookings`, {
@@ -235,13 +262,27 @@ export default function BookingForm() {
               required
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white"
+              disabled={!date || timesLoading}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white disabled:bg-slate-50 disabled:text-slate-400"
             >
-              <option value="" disabled>Select time</option>
-              {TIME_SLOTS.map((t) => (
+              <option value="" disabled>
+                {!date
+                  ? 'Select a date first'
+                  : timesLoading
+                    ? 'Loading times...'
+                    : availableTimes.length === 0
+                      ? 'No departures this day'
+                      : 'Select time'}
+              </option>
+              {availableTimes.map((t) => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
+            {date && !timesLoading && availableTimes.length === 0 && (
+              <p className="mt-1 text-xs text-amber-700">
+                No shuttle departures are scheduled for this date. Choose another date.
+              </p>
+            )}
           </div>
         </div>
 
@@ -394,7 +435,13 @@ export default function BookingForm() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={submitting || (Boolean(date) && blackoutDates.has(date))}
+          disabled={
+            submitting
+            || (Boolean(date) && blackoutDates.has(date))
+            || !time
+            || timesLoading
+            || availableTimes.length === 0
+          }
           className="w-full bg-sky-500 hover:bg-sky-400 disabled:bg-sky-300 text-white font-semibold py-3 rounded-xl shadow-sm transition-colors cursor-pointer disabled:cursor-not-allowed"
         >
           {submitting ? 'Processing...' : `Pay ${totalPrice.toLocaleString()} ISK`}

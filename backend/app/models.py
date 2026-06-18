@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Integer, DateTime
+from sqlalchemy import Integer, String, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -13,6 +13,23 @@ class BlackoutDate(Base):
     __tablename__ = "blackout_dates"
 
     date: Mapped[str] = mapped_column(String(10), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow
+    )
+
+
+class ShuttleTimeSlot(Base):
+    """Configurable departure times: one-off, every day, or weekly on a weekday."""
+
+    __tablename__ = "shuttle_time_slots"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    departure_time: Mapped[str] = mapped_column(String(5))
+    recurrence: Mapped[str] = mapped_column(String(10))
+    event_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )

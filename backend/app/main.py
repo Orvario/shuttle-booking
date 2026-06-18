@@ -1,6 +1,7 @@
 import json
 import logging
 import secrets
+import uuid
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,9 +10,9 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy import func
 
-from app.database import Base, engine, get_db
+from app.database import Base, SessionLocal, engine, get_db
 from app.email import send_confirmation_email, send_hotel_notification
-from app.models import BlackoutDate, Booking
+from app.models import BlackoutDate, Booking, ShuttleTimeSlot
 from app.schemas import (
     BlackoutDateCreate,
     BlackoutDateResponse,
@@ -20,6 +21,9 @@ from app.schemas import (
     BookingRequest,
     BookingResponse,
     CalendarDay,
+    ShuttleTimeSlotCreate,
+    ShuttleTimeSlotResponse,
+    ShuttleTimesPublicResponse,
 )
 from app.settings import settings
 from app.straumur import (
@@ -28,8 +32,6 @@ from app.straumur import (
     get_payment_link_details,
     verify_webhook_hmac,
 )
-
-ALLOWED_TIMES = {"05:00", "06:00", "07:00", "14:00"}
 
 PRICE_TABLE_ISK = {
     1: 4400,
@@ -70,6 +72,34 @@ with engine.connect() as conn:
         conn.commit()
         logger.info("Added payment_url column to bookings table")
 
+
+def _seed_default_shuttle_slots_if_empty() -> None:
+    """First deploy: same four daily times as the original hard-coded schedule."""
+    db = SessionLocal()
+    try:
+        if db.query(ShuttleTimeSlot).count() > 0:
+            return
+        for t in ("05:00", "06:00", "07:00", "14:00"):
+            db.add(
+                ShuttleTimeSlot(
+                    id=str(uuid.uuid4()),
+                    departure_time=t,
+                    recurrence="daily",
+                    event_date=None,
+                    weekday=None,
+                )
+            )
+        db.commit()
+        logger.info("Seeded default daily shuttle time slots")
+    except Exception:
+        logger.exception("Shuttle time slot seed failed")
+        db.rollback()
+    finally:
+        db.close()
+
+
+_seed_default_shuttle_slots_if_empty()
+
 app = FastAPI(title="Shuttle Booking API")
 
 app.add_middleware(
@@ -95,6 +125,28 @@ def _is_date_blacked_out(db: Session, date_str: str) -> bool:
         db.query(BlackoutDate).filter(BlackoutDate.date == date_str).first()
         is not None
     )
+
+
+def _python_weekday_for_date(date_str: str) -> int:
+    from datetime import datetime
+
+    return datetime.strptime(date_str, "%Y-%m-%d").date().weekday()
+
+
+def _departure_times_for_date(db: Session, date_str: str) -> list[str]:
+    """Union of all active slot rules that apply to this calendar date."""
+    wd = _python_weekday_for_date(date_str)
+    times: set[str] = set()
+    for slot in db.query(ShuttleTimeSlot).all():
+        if slot.recurrence == "daily":
+            times.add(slot.departure_time)
+        elif slot.recurrence == "weekly":
+            if slot.weekday == wd:
+                times.add(slot.departure_time)
+        elif slot.recurrence == "once":
+            if slot.event_date == date_str:
+                times.add(slot.departure_time)
+    return sorted(times)
 
 
 def _find_recent_duplicate(
@@ -175,8 +227,6 @@ async def create_booking(
         raise HTTPException(status_code=400, detail="Only hotel-to-airport shuttles available")
     if req.passenger_count < 1 or req.passenger_count > 8:
         raise HTTPException(status_code=400, detail="1-8 passengers allowed")
-    if req.time not in ALLOWED_TIMES:
-        raise HTTPException(status_code=400, detail="Invalid departure time")
 
     from datetime import datetime, timedelta, timezone
     try:
@@ -228,6 +278,10 @@ async def create_booking(
             booking_id=existing.id,
             payment_url=payment_url,
         )
+
+    allowed_times = _departure_times_for_date(db, req.date)
+    if req.time not in allowed_times:
+        raise HTTPException(status_code=400, detail="Invalid departure time")
 
     if _is_date_blacked_out(db, req.date):
         raise HTTPException(
@@ -324,6 +378,20 @@ def list_blackouts_public(db: Session = Depends(get_db)):
         .all()
     )
     return rows
+
+
+@app.get("/api/shuttle-times", response_model=ShuttleTimesPublicResponse)
+def get_shuttle_times_public(
+    date: str = Query(..., description="Departure date YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+):
+    from datetime import datetime
+
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format") from None
+    return ShuttleTimesPublicResponse(times=_departure_times_for_date(db, date))
 
 
 def _webhook_success(payload: dict) -> bool:
@@ -478,6 +546,35 @@ def _verify_admin(authorization: str = Header(...)) -> None:
         raise HTTPException(status_code=401, detail="Invalid password")
 
 
+def _admin_shuttle_slot_exists(db: Session, body: ShuttleTimeSlotCreate) -> bool:
+    q = db.query(ShuttleTimeSlot)
+    if body.recurrence == "daily":
+        return (
+            q.filter(
+                ShuttleTimeSlot.recurrence == "daily",
+                ShuttleTimeSlot.departure_time == body.departure_time,
+            ).first()
+            is not None
+        )
+    if body.recurrence == "weekly":
+        return (
+            q.filter(
+                ShuttleTimeSlot.recurrence == "weekly",
+                ShuttleTimeSlot.weekday == body.weekday,
+                ShuttleTimeSlot.departure_time == body.departure_time,
+            ).first()
+            is not None
+        )
+    return (
+        q.filter(
+            ShuttleTimeSlot.recurrence == "once",
+            ShuttleTimeSlot.event_date == body.event_date,
+            ShuttleTimeSlot.departure_time == body.departure_time,
+        ).first()
+        is not None
+    )
+
+
 @app.get("/api/admin/blackouts", response_model=list[BlackoutDateResponse])
 def admin_list_blackouts(
     db: Session = Depends(get_db),
@@ -523,6 +620,67 @@ def admin_remove_blackout(
     db.commit()
     logger.info("Blackout removed for date %s", date)
     return {"status": "ok", "date": date}
+
+
+@app.get("/api/admin/shuttle-time-slots", response_model=list[ShuttleTimeSlotResponse])
+def admin_list_shuttle_time_slots(
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    return (
+        db.query(ShuttleTimeSlot)
+        .order_by(
+            ShuttleTimeSlot.recurrence.asc(),
+            ShuttleTimeSlot.weekday.asc().nullsfirst(),
+            ShuttleTimeSlot.event_date.asc().nullsfirst(),
+            ShuttleTimeSlot.departure_time.asc(),
+        )
+        .all()
+    )
+
+
+@app.post("/api/admin/shuttle-time-slots", response_model=ShuttleTimeSlotResponse)
+def admin_add_shuttle_time_slot(
+    body: ShuttleTimeSlotCreate,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    if _admin_shuttle_slot_exists(db, body):
+        raise HTTPException(
+            status_code=409,
+            detail="An identical departure rule already exists.",
+        )
+    row = ShuttleTimeSlot(
+        id=str(uuid.uuid4()),
+        departure_time=body.departure_time,
+        recurrence=body.recurrence,
+        event_date=body.event_date,
+        weekday=body.weekday,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    logger.info(
+        "Shuttle time slot added: %s %s",
+        body.departure_time,
+        body.recurrence,
+    )
+    return row
+
+
+@app.delete("/api/admin/shuttle-time-slots/{slot_id}")
+def admin_delete_shuttle_time_slot(
+    slot_id: str,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    row = db.query(ShuttleTimeSlot).filter(ShuttleTimeSlot.id == slot_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Time slot not found")
+    db.delete(row)
+    db.commit()
+    logger.info("Shuttle time slot removed: %s", slot_id)
+    return {"status": "ok", "id": slot_id}
 
 
 @app.post("/api/mock-confirm/{booking_id}")

@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
 
 def _validate_yyyy_mm_dd(value: str) -> str:
@@ -70,3 +71,69 @@ class BlackoutDateCreate(BaseModel):
     @classmethod
     def validate_date(cls, v: str) -> str:
         return _validate_yyyy_mm_dd(v)
+
+
+def _normalize_hh_mm(value: str) -> str:
+    s = value.strip()
+    parts = s.split(":")
+    if len(parts) < 2:
+        raise ValueError("Time must be HH:MM")
+    h, m = int(parts[0]), int(parts[1])
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        raise ValueError("Invalid time")
+    return f"{h:02d}:{m:02d}"
+
+
+class ShuttleTimeSlotCreate(BaseModel):
+    departure_time: str
+    recurrence: Literal["once", "daily", "weekly"]
+    event_date: str | None = None
+    weekday: int | None = None
+
+    @field_validator("departure_time")
+    @classmethod
+    def validate_departure_time(cls, v: str) -> str:
+        return _normalize_hh_mm(v)
+
+    @field_validator("event_date")
+    @classmethod
+    def validate_event_date(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        return _validate_yyyy_mm_dd(v)
+
+    @model_validator(mode="after")
+    def recurrence_fields(self) -> "ShuttleTimeSlotCreate":
+        if self.recurrence == "once":
+            if not self.event_date:
+                raise ValueError("One-time departures require a date.")
+            if self.weekday is not None:
+                raise ValueError("One-time departures must not set a weekday.")
+        elif self.recurrence == "weekly":
+            if self.weekday is None or self.weekday < 0 or self.weekday > 6:
+                raise ValueError(
+                    "Weekly departures require a weekday (0=Monday .. 6=Sunday)."
+                )
+            if self.event_date is not None:
+                raise ValueError("Weekly departures must not set a specific date.")
+        else:
+            if self.event_date is not None or self.weekday is not None:
+                raise ValueError(
+                    "Daily departures must not include a date or weekday."
+                )
+        return self
+
+
+class ShuttleTimeSlotResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    departure_time: str
+    recurrence: str
+    event_date: str | None
+    weekday: int | None
+    created_at: datetime
+
+
+class ShuttleTimesPublicResponse(BaseModel):
+    times: list[str]

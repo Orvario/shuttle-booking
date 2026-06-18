@@ -12,8 +12,6 @@ export const PRICE_TABLE_ISK: Record<number, number> = {
   8: 8000,
 };
 
-export const TIME_SLOTS = ['05:00', '06:00', '07:00', '14:00'];
-
 export const CURRENCY = 'ISK';
 
 export const ROUTE = {

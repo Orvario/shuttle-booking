@@ -27,6 +27,33 @@ interface BlackoutRow {
   created_at: string;
 }
 
+interface ShuttleTimeSlotRow {
+  id: string;
+  departure_time: string;
+  recurrence: 'once' | 'daily' | 'weekly';
+  event_date: string | null;
+  weekday: number | null;
+  created_at: string;
+}
+
+const WEEKDAY_LABELS = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+];
+
+function shuttleSlotSummary(slot: ShuttleTimeSlotRow): string {
+  if (slot.recurrence === 'daily') {
+    return `Every day at ${slot.departure_time}`;
+  }
+  if (slot.recurrence === 'weekly') {
+    const d =
+      slot.weekday !== null && slot.weekday >= 0 && slot.weekday <= 6
+        ? WEEKDAY_LABELS[slot.weekday]
+        : 'Unknown day';
+    return `Every ${d} at ${slot.departure_time}`;
+  }
+  return `${slot.event_date ?? '?'} at ${slot.departure_time} (one-time)`;
+}
+
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-GB', {
@@ -150,6 +177,14 @@ export default function AdminPage() {
   const [blackoutSaving, setBlackoutSaving] = useState(false);
   const [blackoutFeedback, setBlackoutFeedback] = useState('');
 
+  const [shuttleSlots, setShuttleSlots] = useState<ShuttleTimeSlotRow[]>([]);
+  const [slotTime, setSlotTime] = useState('05:00');
+  const [slotRecurrence, setSlotRecurrence] = useState<'daily' | 'weekly' | 'once'>('daily');
+  const [slotEventDate, setSlotEventDate] = useState('');
+  const [slotWeekday, setSlotWeekday] = useState(0);
+  const [slotSaving, setSlotSaving] = useState(false);
+  const [slotFeedback, setSlotFeedback] = useState('');
+
   const fetchCalendar = useCallback(async (month: string) => {
     if (!password) return;
     try {
@@ -182,6 +217,28 @@ export default function AdminPage() {
       if (res.ok) {
         const data: BlackoutRow[] = await res.json();
         setBlackouts(data);
+      }
+    } catch {
+      // non-critical
+    }
+  }, [password]);
+
+  const fetchShuttleSlots = useCallback(async () => {
+    if (!password) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/shuttle-time-slots`, {
+        headers: { Authorization: `Bearer ${password}` },
+      });
+      if (res.status === 401) {
+        sessionStorage.removeItem('admin_pw');
+        setAuthenticated(false);
+        setPassword('');
+        setPwError('Invalid password');
+        return;
+      }
+      if (res.ok) {
+        const data: ShuttleTimeSlotRow[] = await res.json();
+        setShuttleSlots(data);
       }
     } catch {
       // non-critical
@@ -325,14 +382,84 @@ export default function AdminPage() {
     }
   }
 
+  async function handleAddShuttleSlot() {
+    setSlotFeedback('');
+    setSlotSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        departure_time: slotTime,
+        recurrence: slotRecurrence,
+      };
+      if (slotRecurrence === 'once') {
+        if (!slotEventDate) {
+          throw new Error('Choose a date for a one-time departure.');
+        }
+        body.event_date = slotEventDate;
+      } else if (slotRecurrence === 'weekly') {
+        body.weekday = slotWeekday;
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/admin/shuttle-time-slots`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${password}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 401) {
+        sessionStorage.removeItem('admin_pw');
+        setAuthenticated(false);
+        setPassword('');
+        setPwError('Invalid password');
+        return;
+      }
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        const detail = errBody?.detail;
+        throw new Error(
+          typeof detail === 'string' ? detail : 'Could not add departure',
+        );
+      }
+      setSlotFeedback('Departure rule added.');
+      fetchShuttleSlots();
+    } catch (err) {
+      setSlotFeedback(err instanceof Error ? err.message : 'Failed to add');
+    } finally {
+      setSlotSaving(false);
+    }
+  }
+
+  async function handleRemoveShuttleSlot(slotId: string) {
+    setSlotFeedback('');
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/admin/shuttle-time-slots/${encodeURIComponent(slotId)}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${password}` },
+        },
+      );
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error(errBody?.detail || 'Remove failed');
+      }
+      setSlotFeedback('Departure rule removed.');
+      fetchShuttleSlots();
+    } catch (err) {
+      setSlotFeedback(err instanceof Error ? err.message : 'Failed to remove');
+    }
+  }
+
   useEffect(() => {
     if (authenticated) {
       fetchBookings();
       fetchPendingBookings();
       fetchCalendar(currentMonth);
       fetchBlackouts();
+      fetchShuttleSlots();
     }
-  }, [authenticated, fetchBookings, fetchPendingBookings, fetchCalendar, fetchBlackouts, currentMonth]);
+  }, [authenticated, fetchBookings, fetchPendingBookings, fetchCalendar, fetchBlackouts, fetchShuttleSlots, currentMonth]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -468,6 +595,127 @@ export default function AdminPage() {
           }}
           blackoutDates={blackouts.map((b) => b.date)}
         />
+
+        {/* Departure schedule */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+          <h2 className="text-base font-bold text-slate-900">Departure schedule</h2>
+          <p className="text-sm text-slate-500">
+            Add departure times like calendar events: every day, every week on a fixed
+            weekday, or a single one-off date. Customers only see times that apply to
+            the date they pick on the booking form.
+          </p>
+
+          <div className="grid sm:grid-cols-2 gap-4 border border-slate-100 rounded-lg p-3 bg-slate-50/50">
+            <div>
+              <label htmlFor="slot-time" className="block text-xs font-medium text-slate-600 mb-1">
+                Departure time
+              </label>
+              <input
+                id="slot-time"
+                type="time"
+                step={60}
+                value={slotTime}
+                onChange={(e) => {
+                  setSlotTime(e.target.value);
+                  setSlotFeedback('');
+                }}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+              />
+            </div>
+            <div>
+              <label htmlFor="slot-recurrence" className="block text-xs font-medium text-slate-600 mb-1">
+                Repeats
+              </label>
+              <select
+                id="slot-recurrence"
+                value={slotRecurrence}
+                onChange={(e) => {
+                  const v = e.target.value as 'daily' | 'weekly' | 'once';
+                  setSlotRecurrence(v);
+                  setSlotFeedback('');
+                }}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white"
+              >
+                <option value="daily">Every day</option>
+                <option value="weekly">Every week (pick weekday)</option>
+                <option value="once">One-time (pick date)</option>
+              </select>
+            </div>
+            {slotRecurrence === 'weekly' && (
+              <div className="sm:col-span-2">
+                <label htmlFor="slot-weekday" className="block text-xs font-medium text-slate-600 mb-1">
+                  Weekday
+                </label>
+                <select
+                  id="slot-weekday"
+                  value={slotWeekday}
+                  onChange={(e) => {
+                    setSlotWeekday(Number(e.target.value));
+                    setSlotFeedback('');
+                  }}
+                  className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white"
+                >
+                  {WEEKDAY_LABELS.map((label, i) => (
+                    <option key={label} value={i}>{label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {slotRecurrence === 'once' && (
+              <div className="sm:col-span-2">
+                <label htmlFor="slot-once-date" className="block text-xs font-medium text-slate-600 mb-1">
+                  Date
+                </label>
+                <input
+                  id="slot-once-date"
+                  type="date"
+                  value={slotEventDate}
+                  onChange={(e) => {
+                    setSlotEventDate(e.target.value);
+                    setSlotFeedback('');
+                  }}
+                  className="w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+            )}
+            <div className="sm:col-span-2">
+              <button
+                type="button"
+                onClick={handleAddShuttleSlot}
+                disabled={slotSaving}
+                className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:bg-sky-300 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer disabled:cursor-wait"
+              >
+                {slotSaving ? 'Saving...' : 'Add departure'}
+              </button>
+            </div>
+          </div>
+
+          {slotFeedback && (
+            <p className="text-sm text-slate-600">{slotFeedback}</p>
+          )}
+
+          {shuttleSlots.length === 0 ? (
+            <p className="text-sm text-slate-400">No departure rules yet.</p>
+          ) : (
+            <ul className="border border-slate-100 rounded-lg divide-y divide-slate-100 overflow-hidden">
+              {shuttleSlots.map((s) => (
+                <li
+                  key={s.id}
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2.5 text-sm bg-slate-50/50"
+                >
+                  <span className="text-slate-800">{shuttleSlotSummary(s)}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveShuttleSlot(s.id)}
+                    className="text-rose-600 hover:text-rose-500 font-medium text-left sm:text-right cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         {/* Blackout dates */}
         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">

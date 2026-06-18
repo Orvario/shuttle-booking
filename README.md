@@ -47,7 +47,7 @@ Without `STRAUMUR_API_KEY`, the API runs in **mock payment mode**: customers ski
 - Open `https://<your-netlify-site>/admin`.
 - Enter the same password as the backend **`ADMIN_PASSWORD`** (stored only on the server). There is no separate frontend secret; the browser sends `Authorization: Bearer <password>` to the API.
 - Use **Blackout dates** on that page to block specific departure days from new bookings (the public form loads blocked dates from `GET /api/blackouts`).
-- Use **Departure schedule** to define when shuttles run: every day, weekly on a weekday, or one-off dates (the booking form loads times from `GET /api/shuttle-times?date=YYYY-MM-DD`). On first deploy the API seeds the previous default daily times (05:00, 06:00, 07:00, 14:00); you can remove or extend them. Use **Hide departure on one date** to drop a single time on one calendar day without changing recurring rules (stored as shuttle time exceptions).
+- Use **Departure schedule** to define when shuttles run: every day, weekly on a weekday, or one-off dates (the booking form loads times from `GET /api/shuttle-times?date=YYYY-MM-DD`). On first deploy the API seeds the previous default daily times (05:00, 06:00, 07:00, 14:00); you can remove or extend them. With a date selected in the admin calendar, **Remove on this day** on a recurring rule skips that departure on that date only (stored as shuttle time exceptions); **Remove** deletes the whole rule.
 
 ---
 

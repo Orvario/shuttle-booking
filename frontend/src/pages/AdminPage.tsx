@@ -74,6 +74,13 @@ function todayStr(): string {
   return new Date().toISOString().split('T')[0];
 }
 
+/** Monday = 0 through Sunday = 6 (matches Python `date.weekday()`). */
+function pythonWeekdayFromDateString(dateStr: string): number {
+  const d = new Date(`${dateStr}T12:00:00`);
+  const js = d.getDay();
+  return js === 0 ? 6 : js - 1;
+}
+
 /** Background refresh only while the admin tab is visible; paused when in another tab or minimized. */
 const REFRESH_INTERVAL_MS = 120_000;
 
@@ -191,12 +198,9 @@ export default function AdminPage() {
   const [slotWeekday, setSlotWeekday] = useState(0);
   const [slotSaving, setSlotSaving] = useState(false);
   const [slotFeedback, setSlotFeedback] = useState('');
+  const [slotDayBusyId, setSlotDayBusyId] = useState<string | null>(null);
 
   const [timeExceptions, setTimeExceptions] = useState<ShuttleTimeExceptionRow[]>([]);
-  const [exceptionDate, setExceptionDate] = useState('');
-  const [exceptionTime, setExceptionTime] = useState('14:00');
-  const [exceptionSaving, setExceptionSaving] = useState(false);
-  const [exceptionFeedback, setExceptionFeedback] = useState('');
 
   const fetchCalendar = useCallback(async (month: string) => {
     if (!password) return;
@@ -514,63 +518,81 @@ export default function AdminPage() {
     }
   }
 
-  async function handleAddTimeException() {
-    if (!exceptionDate.trim()) return;
-    setExceptionFeedback('');
-    setExceptionSaving(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/shuttle-time-exceptions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${password}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          calendar_date: exceptionDate,
-          departure_time: exceptionTime,
-        }),
-      });
-      if (res.status === 401) {
-        sessionStorage.removeItem('admin_pw');
-        setAuthenticated(false);
-        setPassword('');
-        setPwError('Invalid password');
-        return;
-      }
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => null);
-        const detail = errBody?.detail;
-        throw new Error(
-          typeof detail === 'string' ? detail : 'Could not add exception',
-        );
-      }
-      setExceptionFeedback('That time is now hidden for that day only.');
-      fetchTimeExceptions();
-    } catch (err) {
-      setExceptionFeedback(err instanceof Error ? err.message : 'Failed to add');
-    } finally {
-      setExceptionSaving(false);
-    }
+  function exceptionForSelectedCalendarDay(departureTime: string): ShuttleTimeExceptionRow | undefined {
+    return timeExceptions.find(
+      (e) => e.calendar_date === date && e.departure_time === departureTime,
+    );
   }
 
-  async function handleRemoveTimeException(exceptionId: string) {
-    setExceptionFeedback('');
+  function showRemoveOnThisDayButton(slot: ShuttleTimeSlotRow): boolean {
+    if (slot.recurrence === 'once') {
+      return false;
+    }
+    if (slot.recurrence === 'daily') {
+      return true;
+    }
+    if (slot.weekday === null || slot.weekday < 0 || slot.weekday > 6) {
+      return false;
+    }
+    return pythonWeekdayFromDateString(date) === slot.weekday;
+  }
+
+  async function handleSlotDayOverride(slot: ShuttleTimeSlotRow) {
+    if (!showRemoveOnThisDayButton(slot)) return;
+    setSlotDayBusyId(slot.id);
+    setSlotFeedback('');
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/admin/shuttle-time-exceptions/${encodeURIComponent(exceptionId)}`,
-        {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${password}` },
-        },
-      );
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => null);
-        throw new Error(errBody?.detail || 'Remove failed');
+      const existing = exceptionForSelectedCalendarDay(slot.departure_time);
+      if (existing) {
+        const res = await fetch(
+          `${API_BASE_URL}/api/admin/shuttle-time-exceptions/${encodeURIComponent(existing.id)}`,
+          {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${password}` },
+          },
+        );
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => null);
+          throw new Error(errBody?.detail || 'Could not restore');
+        }
+        setSlotFeedback(
+          `${slot.departure_time} on ${formatDate(date)} is available again for new bookings.`,
+        );
+      } else {
+        const res = await fetch(`${API_BASE_URL}/api/admin/shuttle-time-exceptions`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${password}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            calendar_date: date,
+            departure_time: slot.departure_time,
+          }),
+        });
+        if (res.status === 401) {
+          sessionStorage.removeItem('admin_pw');
+          setAuthenticated(false);
+          setPassword('');
+          setPwError('Invalid password');
+          return;
+        }
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => null);
+          const detail = errBody?.detail;
+          throw new Error(
+            typeof detail === 'string' ? detail : 'Could not update',
+          );
+        }
+        setSlotFeedback(
+          `${slot.departure_time} on ${formatDate(date)} removed for that day only.`,
+        );
       }
-      setExceptionFeedback('Exception removed.');
       fetchTimeExceptions();
     } catch (err) {
-      setExceptionFeedback(err instanceof Error ? err.message : 'Failed to remove');
+      setSlotFeedback(err instanceof Error ? err.message : 'Failed to update');
+    } finally {
+      setSlotDayBusyId(null);
     }
   }
 
@@ -726,10 +748,11 @@ export default function AdminPage() {
           <p className="text-sm text-slate-500">
             Add rules like calendar events: every day, every week on a fixed weekday,
             or a single one-off date. Customers only see times that apply to the date
-            they choose. Removing a daily or weekly rule affects every matching day.
-            To drop one departure time on a single calendar day only, use{' '}
-            <span className="font-medium text-slate-700">Hide departure on one date</span>{' '}
-            below instead of removing the whole rule.
+            they choose. Select a date in the calendar above, then use{' '}
+            <span className="font-medium text-slate-700">Remove on this day</span> on a
+            daily or weekly rule to skip that departure on the selected date only.
+            Use <span className="font-medium text-slate-700">Remove</span> to delete the
+            whole rule for all dates.
           </p>
 
           <div className="grid sm:grid-cols-2 gap-4 border border-slate-100 rounded-lg p-3 bg-slate-50/50">
@@ -830,94 +853,39 @@ export default function AdminPage() {
                   key={s.id}
                   className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2.5 text-sm bg-slate-50/50"
                 >
-                  <span className="text-slate-800">{shuttleSlotSummary(s)}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveShuttleSlot(s.id)}
-                    className="text-rose-600 hover:text-rose-500 font-medium text-left sm:text-right cursor-pointer"
-                  >
-                    Remove
-                  </button>
+                  <span className="text-slate-800 min-w-0">{shuttleSlotSummary(s)}</span>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    {showRemoveOnThisDayButton(s) && (
+                      <button
+                        type="button"
+                        disabled={slotDayBusyId === s.id}
+                        onClick={() => handleSlotDayOverride(s)}
+                        title={
+                          exceptionForSelectedCalendarDay(s.departure_time)
+                            ? 'Show this departure again on the selected calendar date'
+                            : `Skip this departure on ${formatDate(date)} only`
+                        }
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-50 cursor-pointer disabled:cursor-wait"
+                      >
+                        {slotDayBusyId === s.id
+                          ? '…'
+                          : exceptionForSelectedCalendarDay(s.departure_time)
+                            ? 'Restore this day'
+                            : 'Remove on this day'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveShuttleSlot(s.id)}
+                      className="px-3 py-1.5 text-sm font-medium text-rose-600 hover:text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
-
-          <div className="border-t border-slate-200 pt-4 mt-4 space-y-3">
-            <h3 className="text-sm font-semibold text-slate-800">Hide departure on one date</h3>
-            <p className="text-xs text-slate-500">
-              Removes that time from the booking form for the chosen day only. Recurring
-              rules stay the same for all other dates (for example, no 14:00 on one
-              holiday while keeping daily 14:00 elsewhere).
-            </p>
-            <div className="flex flex-wrap gap-3 items-end">
-              <div>
-                <label htmlFor="exception-date" className="block text-xs font-medium text-slate-600 mb-1">
-                  Date
-                </label>
-                <input
-                  id="exception-date"
-                  type="date"
-                  value={exceptionDate}
-                  onChange={(e) => {
-                    setExceptionDate(e.target.value);
-                    setExceptionFeedback('');
-                  }}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
-                />
-              </div>
-              <div>
-                <label htmlFor="exception-time" className="block text-xs font-medium text-slate-600 mb-1">
-                  Time to hide
-                </label>
-                <input
-                  id="exception-time"
-                  type="time"
-                  step={60}
-                  value={exceptionTime}
-                  onChange={(e) => {
-                    setExceptionTime(e.target.value);
-                    setExceptionFeedback('');
-                  }}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={handleAddTimeException}
-                disabled={!exceptionDate || exceptionSaving}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-400 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
-              >
-                {exceptionSaving ? 'Saving...' : 'Hide for that day'}
-              </button>
-            </div>
-            {exceptionFeedback && (
-              <p className="text-sm text-slate-600">{exceptionFeedback}</p>
-            )}
-            {timeExceptions.length === 0 ? (
-              <p className="text-sm text-slate-400">No one-date exceptions.</p>
-            ) : (
-              <ul className="border border-slate-100 rounded-lg divide-y divide-slate-100 overflow-hidden">
-                {timeExceptions.map((ex) => (
-                  <li
-                    key={ex.id}
-                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2.5 text-sm bg-slate-50/50"
-                  >
-                    <span className="text-slate-800">
-                      {formatDate(ex.calendar_date)}: no {ex.departure_time} departure
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTimeException(ex.id)}
-                      className="text-rose-600 hover:text-rose-500 font-medium text-left sm:text-right cursor-pointer"
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
         </div>
 
         {/* Blackout dates */}

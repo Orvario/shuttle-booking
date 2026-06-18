@@ -137,3 +137,27 @@ class ShuttleTimeSlotResponse(BaseModel):
 
 class ShuttleTimesPublicResponse(BaseModel):
     times: list[str]
+
+
+class ShuttleTimeExceptionCreate(BaseModel):
+    calendar_date: str
+    departure_time: str
+
+    @field_validator("calendar_date")
+    @classmethod
+    def validate_calendar_date(cls, v: str) -> str:
+        return _validate_yyyy_mm_dd(v)
+
+    @field_validator("departure_time")
+    @classmethod
+    def validate_departure_time(cls, v: str) -> str:
+        return _normalize_hh_mm(v)
+
+
+class ShuttleTimeExceptionResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    calendar_date: str
+    departure_time: str
+    created_at: datetime

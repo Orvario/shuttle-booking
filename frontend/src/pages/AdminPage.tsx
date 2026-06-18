@@ -36,6 +36,13 @@ interface ShuttleTimeSlotRow {
   created_at: string;
 }
 
+interface ShuttleTimeExceptionRow {
+  id: string;
+  calendar_date: string;
+  departure_time: string;
+  created_at: string;
+}
+
 const WEEKDAY_LABELS = [
   'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
 ];
@@ -185,6 +192,12 @@ export default function AdminPage() {
   const [slotSaving, setSlotSaving] = useState(false);
   const [slotFeedback, setSlotFeedback] = useState('');
 
+  const [timeExceptions, setTimeExceptions] = useState<ShuttleTimeExceptionRow[]>([]);
+  const [exceptionDate, setExceptionDate] = useState('');
+  const [exceptionTime, setExceptionTime] = useState('14:00');
+  const [exceptionSaving, setExceptionSaving] = useState(false);
+  const [exceptionFeedback, setExceptionFeedback] = useState('');
+
   const fetchCalendar = useCallback(async (month: string) => {
     if (!password) return;
     try {
@@ -239,6 +252,28 @@ export default function AdminPage() {
       if (res.ok) {
         const data: ShuttleTimeSlotRow[] = await res.json();
         setShuttleSlots(data);
+      }
+    } catch {
+      // non-critical
+    }
+  }, [password]);
+
+  const fetchTimeExceptions = useCallback(async () => {
+    if (!password) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/shuttle-time-exceptions`, {
+        headers: { Authorization: `Bearer ${password}` },
+      });
+      if (res.status === 401) {
+        sessionStorage.removeItem('admin_pw');
+        setAuthenticated(false);
+        setPassword('');
+        setPwError('Invalid password');
+        return;
+      }
+      if (res.ok) {
+        const data: ShuttleTimeExceptionRow[] = await res.json();
+        setTimeExceptions(data);
       }
     } catch {
       // non-critical
@@ -479,6 +514,66 @@ export default function AdminPage() {
     }
   }
 
+  async function handleAddTimeException() {
+    if (!exceptionDate.trim()) return;
+    setExceptionFeedback('');
+    setExceptionSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/shuttle-time-exceptions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${password}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          calendar_date: exceptionDate,
+          departure_time: exceptionTime,
+        }),
+      });
+      if (res.status === 401) {
+        sessionStorage.removeItem('admin_pw');
+        setAuthenticated(false);
+        setPassword('');
+        setPwError('Invalid password');
+        return;
+      }
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        const detail = errBody?.detail;
+        throw new Error(
+          typeof detail === 'string' ? detail : 'Could not add exception',
+        );
+      }
+      setExceptionFeedback('That time is now hidden for that day only.');
+      fetchTimeExceptions();
+    } catch (err) {
+      setExceptionFeedback(err instanceof Error ? err.message : 'Failed to add');
+    } finally {
+      setExceptionSaving(false);
+    }
+  }
+
+  async function handleRemoveTimeException(exceptionId: string) {
+    setExceptionFeedback('');
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/admin/shuttle-time-exceptions/${encodeURIComponent(exceptionId)}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${password}` },
+        },
+      );
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => null);
+        throw new Error(errBody?.detail || 'Remove failed');
+      }
+      setExceptionFeedback('Exception removed.');
+      fetchTimeExceptions();
+    } catch (err) {
+      setExceptionFeedback(err instanceof Error ? err.message : 'Failed to remove');
+    }
+  }
+
   useEffect(() => {
     if (authenticated) {
       fetchBookings();
@@ -486,8 +581,9 @@ export default function AdminPage() {
       fetchCalendar(currentMonth);
       fetchBlackouts();
       fetchShuttleSlots();
+      fetchTimeExceptions();
     }
-  }, [authenticated, fetchBookings, fetchPendingBookings, fetchCalendar, fetchBlackouts, fetchShuttleSlots, currentMonth]);
+  }, [authenticated, fetchBookings, fetchPendingBookings, fetchCalendar, fetchBlackouts, fetchShuttleSlots, fetchTimeExceptions, currentMonth]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -628,9 +724,12 @@ export default function AdminPage() {
         <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
           <h2 className="text-base font-bold text-slate-900">Departure schedule</h2>
           <p className="text-sm text-slate-500">
-            Add departure times like calendar events: every day, every week on a fixed
-            weekday, or a single one-off date. Customers only see times that apply to
-            the date they pick on the booking form.
+            Add rules like calendar events: every day, every week on a fixed weekday,
+            or a single one-off date. Customers only see times that apply to the date
+            they choose. Removing a daily or weekly rule affects every matching day.
+            To drop one departure time on a single calendar day only, use{' '}
+            <span className="font-medium text-slate-700">Hide departure on one date</span>{' '}
+            below instead of removing the whole rule.
           </p>
 
           <div className="grid sm:grid-cols-2 gap-4 border border-slate-100 rounded-lg p-3 bg-slate-50/50">
@@ -743,6 +842,82 @@ export default function AdminPage() {
               ))}
             </ul>
           )}
+
+          <div className="border-t border-slate-200 pt-4 mt-4 space-y-3">
+            <h3 className="text-sm font-semibold text-slate-800">Hide departure on one date</h3>
+            <p className="text-xs text-slate-500">
+              Removes that time from the booking form for the chosen day only. Recurring
+              rules stay the same for all other dates (for example, no 14:00 on one
+              holiday while keeping daily 14:00 elsewhere).
+            </p>
+            <div className="flex flex-wrap gap-3 items-end">
+              <div>
+                <label htmlFor="exception-date" className="block text-xs font-medium text-slate-600 mb-1">
+                  Date
+                </label>
+                <input
+                  id="exception-date"
+                  type="date"
+                  value={exceptionDate}
+                  onChange={(e) => {
+                    setExceptionDate(e.target.value);
+                    setExceptionFeedback('');
+                  }}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+              <div>
+                <label htmlFor="exception-time" className="block text-xs font-medium text-slate-600 mb-1">
+                  Time to hide
+                </label>
+                <input
+                  id="exception-time"
+                  type="time"
+                  step={60}
+                  value={exceptionTime}
+                  onChange={(e) => {
+                    setExceptionTime(e.target.value);
+                    setExceptionFeedback('');
+                  }}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleAddTimeException}
+                disabled={!exceptionDate || exceptionSaving}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-400 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
+              >
+                {exceptionSaving ? 'Saving...' : 'Hide for that day'}
+              </button>
+            </div>
+            {exceptionFeedback && (
+              <p className="text-sm text-slate-600">{exceptionFeedback}</p>
+            )}
+            {timeExceptions.length === 0 ? (
+              <p className="text-sm text-slate-400">No one-date exceptions.</p>
+            ) : (
+              <ul className="border border-slate-100 rounded-lg divide-y divide-slate-100 overflow-hidden">
+                {timeExceptions.map((ex) => (
+                  <li
+                    key={ex.id}
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-3 py-2.5 text-sm bg-slate-50/50"
+                  >
+                    <span className="text-slate-800">
+                      {formatDate(ex.calendar_date)}: no {ex.departure_time} departure
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTimeException(ex.id)}
+                      className="text-rose-600 hover:text-rose-500 font-medium text-left sm:text-right cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
         {/* Blackout dates */}

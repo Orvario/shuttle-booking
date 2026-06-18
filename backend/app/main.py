@@ -12,7 +12,7 @@ from sqlalchemy import func
 
 from app.database import Base, SessionLocal, engine, get_db
 from app.email import send_confirmation_email, send_hotel_notification
-from app.models import BlackoutDate, Booking, ShuttleTimeSlot
+from app.models import BlackoutDate, Booking, ShuttleTimeException, ShuttleTimeSlot
 from app.schemas import (
     BlackoutDateCreate,
     BlackoutDateResponse,
@@ -21,6 +21,8 @@ from app.schemas import (
     BookingRequest,
     BookingResponse,
     CalendarDay,
+    ShuttleTimeExceptionCreate,
+    ShuttleTimeExceptionResponse,
     ShuttleTimeSlotCreate,
     ShuttleTimeSlotResponse,
     ShuttleTimesPublicResponse,
@@ -146,7 +148,13 @@ def _departure_times_for_date(db: Session, date_str: str) -> list[str]:
         elif slot.recurrence == "once":
             if slot.event_date == date_str:
                 times.add(slot.departure_time)
-    return sorted(times)
+    excluded = {
+        e.departure_time
+        for e in db.query(ShuttleTimeException)
+        .filter(ShuttleTimeException.calendar_date == date_str)
+        .all()
+    }
+    return sorted(times - excluded)
 
 
 def _count_bookings_for_shuttle_slot(db: Session, slot: ShuttleTimeSlot) -> int:
@@ -726,6 +734,80 @@ def admin_delete_shuttle_time_slot(
     db.commit()
     logger.info("Shuttle time slot removed: %s", slot_id)
     return {"status": "ok", "id": slot_id}
+
+
+@app.get(
+    "/api/admin/shuttle-time-exceptions",
+    response_model=list[ShuttleTimeExceptionResponse],
+)
+def admin_list_shuttle_time_exceptions(
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    return (
+        db.query(ShuttleTimeException)
+        .order_by(
+            ShuttleTimeException.calendar_date.asc(),
+            ShuttleTimeException.departure_time.asc(),
+        )
+        .all()
+    )
+
+
+@app.post(
+    "/api/admin/shuttle-time-exceptions",
+    response_model=ShuttleTimeExceptionResponse,
+)
+def admin_add_shuttle_time_exception(
+    body: ShuttleTimeExceptionCreate,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    if (
+        db.query(ShuttleTimeException)
+        .filter(
+            ShuttleTimeException.calendar_date == body.calendar_date,
+            ShuttleTimeException.departure_time == body.departure_time,
+        )
+        .first()
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="This departure is already hidden on that date.",
+        )
+    row = ShuttleTimeException(
+        id=str(uuid.uuid4()),
+        calendar_date=body.calendar_date,
+        departure_time=body.departure_time,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    logger.info(
+        "Shuttle time exception added: %s %s",
+        body.calendar_date,
+        body.departure_time,
+    )
+    return row
+
+
+@app.delete("/api/admin/shuttle-time-exceptions/{exception_id}")
+def admin_delete_shuttle_time_exception(
+    exception_id: str,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    row = (
+        db.query(ShuttleTimeException)
+        .filter(ShuttleTimeException.id == exception_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Exception not found")
+    db.delete(row)
+    db.commit()
+    logger.info("Shuttle time exception removed: %s", exception_id)
+    return {"status": "ok", "id": exception_id}
 
 
 @app.post("/api/mock-confirm/{booking_id}")

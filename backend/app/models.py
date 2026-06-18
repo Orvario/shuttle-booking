@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Integer, String, DateTime
+from sqlalchemy import DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -30,6 +30,28 @@ class ShuttleTimeSlot(Base):
     recurrence: Mapped[str] = mapped_column(String(10))
     event_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow
+    )
+
+
+class ShuttleTimeException(Base):
+    """Hide one departure time on one calendar day without changing recurring rules."""
+
+    __tablename__ = "shuttle_time_exceptions"
+    __table_args__ = (
+        UniqueConstraint(
+            "calendar_date",
+            "departure_time",
+            name="uq_shuttle_time_exception_day_time",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    calendar_date: Mapped[str] = mapped_column(String(10))
+    departure_time: Mapped[str] = mapped_column(String(5))
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow
     )

@@ -22,6 +22,11 @@ interface CalendarDay {
   passengers: number;
 }
 
+interface BlackoutRow {
+  date: string;
+  created_at: string;
+}
+
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-GB', {
@@ -140,6 +145,11 @@ export default function AdminPage() {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [confirmSuccess, setConfirmSuccess] = useState('');
 
+  const [blackouts, setBlackouts] = useState<BlackoutRow[]>([]);
+  const [blackoutInput, setBlackoutInput] = useState('');
+  const [blackoutSaving, setBlackoutSaving] = useState(false);
+  const [blackoutFeedback, setBlackoutFeedback] = useState('');
+
   const fetchCalendar = useCallback(async (month: string) => {
     if (!password) return;
     try {
@@ -153,6 +163,28 @@ export default function AdminPage() {
       }
     } catch {
       // calendar data is non-critical, silently fail
+    }
+  }, [password]);
+
+  const fetchBlackouts = useCallback(async () => {
+    if (!password) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/blackouts`, {
+        headers: { Authorization: `Bearer ${password}` },
+      });
+      if (res.status === 401) {
+        sessionStorage.removeItem('admin_pw');
+        setAuthenticated(false);
+        setPassword('');
+        setPwError('Invalid password');
+        return;
+      }
+      if (res.ok) {
+        const data: BlackoutRow[] = await res.json();
+        setBlackouts(data);
+      }
+    } catch {
+      // non-critical
     }
   }, [password]);
 
@@ -233,13 +265,74 @@ export default function AdminPage() {
     }
   }
 
+  async function handleAddBlackout() {
+    if (!blackoutInput.trim()) return;
+    setBlackoutFeedback('');
+    setBlackoutSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/blackouts`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${password}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ date: blackoutInput }),
+      });
+      if (res.status === 401) {
+        sessionStorage.removeItem('admin_pw');
+        setAuthenticated(false);
+        setPassword('');
+        setPwError('Invalid password');
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const detail = body?.detail;
+        const message =
+          typeof detail === 'string'
+            ? detail
+            : 'Could not add blackout';
+        throw new Error(message);
+      }
+      setBlackoutInput('');
+      setBlackoutFeedback('Date blocked.');
+      fetchBlackouts();
+    } catch (err) {
+      setBlackoutFeedback(err instanceof Error ? err.message : 'Failed to add blackout');
+    } finally {
+      setBlackoutSaving(false);
+    }
+  }
+
+  async function handleRemoveBlackout(dateStr: string) {
+    setBlackoutFeedback('');
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/admin/blackouts/${encodeURIComponent(dateStr)}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${password}` },
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || 'Remove failed');
+      }
+      setBlackoutFeedback('Blackout removed.');
+      fetchBlackouts();
+    } catch (err) {
+      setBlackoutFeedback(err instanceof Error ? err.message : 'Failed to remove');
+    }
+  }
+
   useEffect(() => {
     if (authenticated) {
       fetchBookings();
       fetchPendingBookings();
       fetchCalendar(currentMonth);
+      fetchBlackouts();
     }
-  }, [authenticated, fetchBookings, fetchPendingBookings, fetchCalendar, currentMonth]);
+  }, [authenticated, fetchBookings, fetchPendingBookings, fetchCalendar, fetchBlackouts, currentMonth]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -373,7 +466,66 @@ export default function AdminPage() {
           onMonthChange={(ym) => {
             setCurrentMonth(ym);
           }}
+          blackoutDates={blackouts.map((b) => b.date)}
         />
+
+        {/* Blackout dates */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+          <h2 className="text-base font-bold text-slate-900">Blackout dates</h2>
+          <p className="text-sm text-slate-500">
+            Customers cannot start a new booking on these days. Pending payments for
+            those dates can still be completed.
+          </p>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="min-w-0">
+              <label htmlFor="blackout-date" className="block text-xs font-medium text-slate-600 mb-1">
+                Block a date
+              </label>
+              <input
+                id="blackout-date"
+                type="date"
+                value={blackoutInput}
+                onChange={(e) => {
+                  setBlackoutInput(e.target.value);
+                  setBlackoutFeedback('');
+                }}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleAddBlackout}
+              disabled={!blackoutInput || blackoutSaving}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-400 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
+            >
+              {blackoutSaving ? 'Saving...' : 'Block date'}
+            </button>
+          </div>
+          {blackoutFeedback && (
+            <p className="text-sm text-slate-600">{blackoutFeedback}</p>
+          )}
+          {blackouts.length === 0 ? (
+            <p className="text-sm text-slate-400">No blackout dates.</p>
+          ) : (
+            <ul className="border border-slate-100 rounded-lg divide-y divide-slate-100 overflow-hidden">
+              {blackouts.map((b) => (
+                <li
+                  key={b.date}
+                  className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm bg-slate-50/50"
+                >
+                  <span className="font-medium text-slate-800">{formatDate(b.date)}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveBlackout(b.date)}
+                    className="text-rose-600 hover:text-rose-500 font-medium whitespace-nowrap cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         {/* Pending bookings alert */}
         {pendingBookings.length > 0 && (

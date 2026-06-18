@@ -54,8 +54,18 @@ export default function BookingForm() {
   const [resuming, setResuming] = useState(false);
   const [error, setError] = useState('');
   const [pendingBooking, setPendingBooking] = useState<PendingBooking | null>(null);
+  const [blackoutDates, setBlackoutDates] = useState<Set<string>>(new Set());
 
   const totalPrice = PRICE_TABLE_ISK[passengers] ?? 0;
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/blackouts`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { date: string }[]) => {
+        setBlackoutDates(new Set(rows.map((x) => x.date)));
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const storedId = sessionStorage.getItem(PENDING_BOOKING_KEY);
@@ -131,6 +141,10 @@ export default function BookingForm() {
         throw new Error('Bookings must be made before 10:00 pm the day before departure.');
       }
 
+      if (blackoutDates.has(date)) {
+        throw new Error('This date is not available for booking. Please choose another day.');
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/bookings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -200,8 +214,17 @@ export default function BookingForm() {
               value={date}
               onChange={(e) => setDate(e.target.value)}
               min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+              className={`w-full rounded-lg border px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 ${
+                date && blackoutDates.has(date)
+                  ? 'border-rose-400 bg-rose-50'
+                  : 'border-slate-300'
+              }`}
             />
+            {date && blackoutDates.has(date) && (
+              <p className="mt-1 text-xs text-rose-600">
+                This date is closed for shuttle bookings. Please select another date.
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="time" className="block text-sm font-medium text-slate-700 mb-1">
@@ -371,8 +394,8 @@ export default function BookingForm() {
         {/* Submit */}
         <button
           type="submit"
-          disabled={submitting}
-          className="w-full bg-sky-500 hover:bg-sky-400 disabled:bg-sky-300 text-white font-semibold py-3 rounded-xl shadow-sm transition-colors cursor-pointer disabled:cursor-wait"
+          disabled={submitting || (Boolean(date) && blackoutDates.has(date))}
+          className="w-full bg-sky-500 hover:bg-sky-400 disabled:bg-sky-300 text-white font-semibold py-3 rounded-xl shadow-sm transition-colors cursor-pointer disabled:cursor-not-allowed"
         >
           {submitting ? 'Processing...' : `Pay ${totalPrice.toLocaleString()} ISK`}
         </button>

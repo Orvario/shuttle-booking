@@ -9,6 +9,8 @@ interface MiniCalendarProps {
   calendarData: CalendarDay[];
   onSelectDate: (date: string) => void;
   onMonthChange: (yearMonth: string) => void;
+  /** YYYY-MM-DD dates shown as unavailable (e.g. admin blackouts). */
+  blackoutDates?: string[];
 }
 
 function pad(n: number): string {
@@ -47,10 +49,13 @@ export default function MiniCalendar({
   calendarData,
   onSelectDate,
   onMonthChange,
+  blackoutDates = [],
 }: MiniCalendarProps) {
   const today = todayStr();
   const currentYearMonth = selectedDate.slice(0, 7);
   const [year, month] = parseYearMonth(selectedDate);
+
+  const blackoutSet = new Set(blackoutDates);
 
   const firstDay = new Date(year, month - 1, 1);
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -124,6 +129,7 @@ export default function MiniCalendar({
           const isToday = dateStr === today;
           const data = countsByDate.get(dateStr);
           const hasBookings = data && data.count > 0;
+          const isBlackout = blackoutSet.has(dateStr);
 
           return (
             <button
@@ -132,7 +138,8 @@ export default function MiniCalendar({
               className={`h-10 flex flex-col items-center justify-center rounded-lg text-sm transition-colors cursor-pointer relative
                 ${isSelected ? 'bg-sky-500 text-white' : ''}
                 ${!isSelected && isToday ? 'ring-1 ring-sky-400 text-sky-600 font-semibold' : ''}
-                ${!isSelected && !isToday ? 'text-slate-700 hover:bg-slate-100' : ''}
+                ${!isSelected && !isToday && isBlackout ? 'bg-rose-50 text-rose-700 font-medium' : ''}
+                ${!isSelected && !isToday && !isBlackout ? 'text-slate-700 hover:bg-slate-100' : ''}
               `}
             >
               <span className="leading-none">{day}</span>
@@ -140,6 +147,13 @@ export default function MiniCalendar({
                 <span
                   className={`absolute bottom-1 w-1.5 h-1.5 rounded-full ${
                     isSelected ? 'bg-white' : 'bg-sky-500'
+                  }`}
+                />
+              )}
+              {isBlackout && !hasBookings && (
+                <span
+                  className={`absolute bottom-1 w-1.5 h-1.5 rounded-full ${
+                    isSelected ? 'bg-white' : 'bg-rose-500'
                   }`}
                 />
               )}

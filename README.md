@@ -46,6 +46,7 @@ Without `STRAUMUR_API_KEY`, the API runs in **mock payment mode**: customers ski
 
 - Open `https://<your-netlify-site>/admin`.
 - Enter the same password as the backend **`ADMIN_PASSWORD`** (stored only on the server). There is no separate frontend secret; the browser sends `Authorization: Bearer <password>` to the API.
+- Use **Blackout dates** on that page to block specific departure days from new bookings (the public form loads blocked dates from `GET /api/blackouts`).
 
 ---
 

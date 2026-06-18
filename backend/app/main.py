@@ -11,8 +11,10 @@ from sqlalchemy import func
 
 from app.database import Base, engine, get_db
 from app.email import send_confirmation_email, send_hotel_notification
-from app.models import Booking
+from app.models import BlackoutDate, Booking
 from app.schemas import (
+    BlackoutDateCreate,
+    BlackoutDateResponse,
     BookingCreated,
     BookingPayment,
     BookingRequest,
@@ -86,6 +88,13 @@ app.add_middleware(
 
 def _success_page_url(booking_id: str) -> str:
     return f"{settings.frontend_url}/success?booking_id={booking_id}"
+
+
+def _is_date_blacked_out(db: Session, date_str: str) -> bool:
+    return (
+        db.query(BlackoutDate).filter(BlackoutDate.date == date_str).first()
+        is not None
+    )
 
 
 def _find_recent_duplicate(
@@ -220,6 +229,12 @@ async def create_booking(
             payment_url=payment_url,
         )
 
+    if _is_date_blacked_out(db, req.date):
+        raise HTTPException(
+            status_code=400,
+            detail="This departure date is not available for booking.",
+        )
+
     booking = Booking(
         direction=req.direction,
         date=req.date,
@@ -298,6 +313,17 @@ async def get_booking_payment(
         payment_url=payment_url,
         status=booking.status,
     )
+
+
+@app.get("/api/blackouts", response_model=list[BlackoutDateResponse])
+def list_blackouts_public(db: Session = Depends(get_db)):
+    """Dates blocked from new public bookings (used by the booking form)."""
+    rows = (
+        db.query(BlackoutDate)
+        .order_by(BlackoutDate.date.asc())
+        .all()
+    )
+    return rows
 
 
 def _webhook_success(payload: dict) -> bool:
@@ -450,6 +476,53 @@ def _verify_admin(authorization: str = Header(...)) -> None:
     token = authorization[len(prefix):]
     if not secrets.compare_digest(token, settings.admin_password):
         raise HTTPException(status_code=401, detail="Invalid password")
+
+
+@app.get("/api/admin/blackouts", response_model=list[BlackoutDateResponse])
+def admin_list_blackouts(
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    rows = (
+        db.query(BlackoutDate)
+        .order_by(BlackoutDate.date.asc())
+        .all()
+    )
+    return rows
+
+
+@app.post("/api/admin/blackouts", response_model=BlackoutDateResponse)
+def admin_add_blackout(
+    body: BlackoutDateCreate,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    if db.query(BlackoutDate).filter(BlackoutDate.date == body.date).first():
+        raise HTTPException(
+            status_code=409,
+            detail="This date is already blocked.",
+        )
+    row = BlackoutDate(date=body.date)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    logger.info("Blackout added for date %s", body.date)
+    return row
+
+
+@app.delete("/api/admin/blackouts/{date}")
+def admin_remove_blackout(
+    date: str,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    row = db.query(BlackoutDate).filter(BlackoutDate.date == date).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Blackout not found")
+    db.delete(row)
+    db.commit()
+    logger.info("Blackout removed for date %s", date)
+    return {"status": "ok", "date": date}
 
 
 @app.post("/api/mock-confirm/{booking_id}")

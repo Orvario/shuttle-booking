@@ -433,16 +433,44 @@ export default function AdminPage() {
   async function handleRemoveShuttleSlot(slotId: string) {
     setSlotFeedback('');
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/admin/shuttle-time-slots/${encodeURIComponent(slotId)}`,
-        {
+      const deleteUrl = (force: boolean) =>
+        `${API_BASE_URL}/api/admin/shuttle-time-slots/${encodeURIComponent(slotId)}${
+          force ? '?force=true' : ''
+        }`;
+
+      let res = await fetch(deleteUrl(false), {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${password}` },
+      });
+
+      if (res.status === 409) {
+        const errBody = await res.json().catch(() => ({}));
+        const d = errBody?.detail;
+        let message =
+          'This departure rule is still linked to existing bookings.';
+        if (typeof d === 'object' && d !== null && 'message' in d) {
+          message = String((d as { message: string }).message);
+        }
+        const confirmed = window.confirm(
+          `${message}\n\nRemove this rule anyway? Existing booking records will not be changed.`,
+        );
+        if (!confirmed) {
+          return;
+        }
+        res = await fetch(deleteUrl(true), {
           method: 'DELETE',
           headers: { Authorization: `Bearer ${password}` },
-        },
-      );
+        });
+      }
+
       if (!res.ok) {
         const errBody = await res.json().catch(() => null);
-        throw new Error(errBody?.detail || 'Remove failed');
+        const detail = errBody?.detail;
+        const msg =
+          typeof detail === 'string'
+            ? detail
+            : 'Remove failed';
+        throw new Error(msg);
       }
       setSlotFeedback('Departure rule removed.');
       fetchShuttleSlots();

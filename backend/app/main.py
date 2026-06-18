@@ -149,6 +149,36 @@ def _departure_times_for_date(db: Session, date_str: str) -> list[str]:
     return sorted(times)
 
 
+def _count_bookings_for_shuttle_slot(db: Session, slot: ShuttleTimeSlot) -> int:
+    """How many bookings match this rule (any status)."""
+    if slot.recurrence == "daily":
+        return (
+            db.query(Booking)
+            .filter(Booking.time == slot.departure_time)
+            .count()
+        )
+    if slot.recurrence == "weekly":
+        if slot.weekday is None:
+            return 0
+        n = 0
+        for b in db.query(Booking).filter(Booking.time == slot.departure_time).all():
+            if _python_weekday_for_date(b.date) == slot.weekday:
+                n += 1
+        return n
+    if slot.recurrence == "once":
+        if not slot.event_date:
+            return 0
+        return (
+            db.query(Booking)
+            .filter(
+                Booking.date == slot.event_date,
+                Booking.time == slot.departure_time,
+            )
+            .count()
+        )
+    return 0
+
+
 def _find_recent_duplicate(
     db: Session,
     req: BookingRequest,
@@ -671,12 +701,27 @@ def admin_add_shuttle_time_slot(
 @app.delete("/api/admin/shuttle-time-slots/{slot_id}")
 def admin_delete_shuttle_time_slot(
     slot_id: str,
+    force: bool = Query(False, description="Set true after confirming removal despite bookings"),
     db: Session = Depends(get_db),
     _auth: None = Depends(_verify_admin),
 ):
     row = db.query(ShuttleTimeSlot).filter(ShuttleTimeSlot.id == slot_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Time slot not found")
+    booking_count = _count_bookings_for_shuttle_slot(db, row)
+    if booking_count > 0 and not force:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "bookings_exist",
+                "message": (
+                    f"This departure rule matches {booking_count} existing "
+                    f"booking(s). Removing it stops new bookings for this time; "
+                    f"existing records are unchanged."
+                ),
+                "booking_count": booking_count,
+            },
+        )
     db.delete(row)
     db.commit()
     logger.info("Shuttle time slot removed: %s", slot_id)

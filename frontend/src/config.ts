@@ -9,7 +9,6 @@ export const PRICE_TABLE_ISK: Record<number, number> = {
   5: 6500,
   6: 7200,
   7: 7900,
-  8: 8000,
 };
 
 export const CURRENCY = 'ISK';

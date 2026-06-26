@@ -37,7 +37,7 @@ const COUNTRY_CODES = [
 ];
 
 const MIN_PASSENGERS = 1;
-const MAX_PASSENGERS = 8;
+const MAX_PASSENGERS = 7;
 const CUTOFF_HOUR = 22;
 
 export default function BookingForm() {
@@ -322,7 +322,9 @@ export default function BookingForm() {
               +
             </button>
           </div>
-          <p className="mt-1 text-xs text-slate-400">{MIN_PASSENGERS}–{MAX_PASSENGERS} passengers</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {MIN_PASSENGERS}–{MAX_PASSENGERS} passengers (shuttle capacity)
+          </p>
         </div>
 
         {/* Contact details */}

@@ -43,8 +43,9 @@ PRICE_TABLE_ISK = {
     5: 6500,
     6: 7200,
     7: 7900,
-    8: 8000,
 }
+
+MAX_PASSENGERS = 7
 
 PENDING_BOOKING_WINDOW_HOURS = 24
 
@@ -263,8 +264,11 @@ async def create_booking(
 ):
     if req.direction != "to_airport":
         raise HTTPException(status_code=400, detail="Only hotel-to-airport shuttles available")
-    if req.passenger_count < 1 or req.passenger_count > 8:
-        raise HTTPException(status_code=400, detail="1-8 passengers allowed")
+    if req.passenger_count < 1 or req.passenger_count > MAX_PASSENGERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"1-{MAX_PASSENGERS} passengers allowed",
+        )
 
     from datetime import datetime, timedelta, timezone
     try:

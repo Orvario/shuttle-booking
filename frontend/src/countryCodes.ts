@@ -251,6 +251,11 @@ export const COUNTRY_DIAL_CODES: CountryDialCode[] = [
 
 const byIso = new Map(COUNTRY_DIAL_CODES.map((c) => [c.iso2, c]));
 
+const dialCodeCounts = COUNTRY_DIAL_CODES.reduce<Map<string, number>>((counts, c) => {
+  counts.set(c.dial, (counts.get(c.dial) ?? 0) + 1);
+  return counts;
+}, new Map());
+
 /** Iceland first, then all other countries alphabetically by name. */
 export const COUNTRY_DIAL_CODES_SORTED: CountryDialCode[] = [
   ...COUNTRY_DIAL_CODES.filter((c) => c.iso2 === 'IS'),
@@ -273,4 +278,13 @@ export function formatDialCode(dial: string): string {
 
 export function dialCodeForCountry(iso2: string): string {
   return formatDialCode(byIso.get(iso2)?.dial ?? '354');
+}
+
+/** Compact label for the closed select; include country name when dial code is shared. */
+export function countryOptionLabel(c: CountryDialCode): string {
+  const base = `${countryFlag(c.iso2)} ${formatDialCode(c.dial)}`;
+  if ((dialCodeCounts.get(c.dial) ?? 0) > 1) {
+    return `${base} ${c.name}`;
+  }
+  return base;
 }

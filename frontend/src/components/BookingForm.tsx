@@ -3,9 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL, PRICE_TABLE_ISK, ROUTE } from '../config';
 import {
   COUNTRY_DIAL_CODES_SORTED,
-  countryFlag,
+  countryOptionLabel,
   dialCodeForCountry,
-  formatDialCode,
 } from '../countryCodes';
 
 const PENDING_BOOKING_KEY = 'shuttle_pending_booking_id';
@@ -344,16 +343,16 @@ export default function BookingForm() {
             <label htmlFor="phone" className="block text-sm font-medium text-slate-700 mb-1">
               Phone <span className="text-red-400">*</span>
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <select
                 value={countryIso}
                 onChange={(e) => setCountryIso(e.target.value)}
                 aria-label="Country code"
-                className="rounded-lg border border-slate-300 px-2 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white flex-shrink-0 max-w-[11rem]"
+                className="w-full sm:w-auto sm:min-w-[6.5rem] sm:max-w-[9.5rem] rounded-lg border border-slate-300 px-2 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white sm:flex-shrink-0"
               >
                 {COUNTRY_DIAL_CODES_SORTED.map((c) => (
                   <option key={c.iso2} value={c.iso2}>
-                    {countryFlag(c.iso2)} {formatDialCode(c.dial)} {c.name}
+                    {countryOptionLabel(c)}
                   </option>
                 ))}
               </select>
@@ -364,7 +363,7 @@ export default function BookingForm() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="Phone number"
-                className="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
               />
             </div>
           </div>

@@ -1,6 +1,12 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL, PRICE_TABLE_ISK, ROUTE } from '../config';
+import {
+  COUNTRY_DIAL_CODES_SORTED,
+  countryFlag,
+  dialCodeForCountry,
+  formatDialCode,
+} from '../countryCodes';
 
 const PENDING_BOOKING_KEY = 'shuttle_pending_booking_id';
 
@@ -12,29 +18,6 @@ interface PendingBooking {
   passenger_name: string;
   amount_isk: number;
 }
-
-const COUNTRY_CODES = [
-  { code: '+354', flag: '\u{1F1EE}\u{1F1F8}', label: 'Iceland' },
-  { code: '+1', flag: '\u{1F1FA}\u{1F1F8}', label: 'USA' },
-  { code: '+44', flag: '\u{1F1EC}\u{1F1E7}', label: 'UK' },
-  { code: '+49', flag: '\u{1F1E9}\u{1F1EA}', label: 'Germany' },
-  { code: '+33', flag: '\u{1F1EB}\u{1F1F7}', label: 'France' },
-  { code: '+34', flag: '\u{1F1EA}\u{1F1F8}', label: 'Spain' },
-  { code: '+39', flag: '\u{1F1EE}\u{1F1F9}', label: 'Italy' },
-  { code: '+31', flag: '\u{1F1F3}\u{1F1F1}', label: 'Netherlands' },
-  { code: '+46', flag: '\u{1F1F8}\u{1F1EA}', label: 'Sweden' },
-  { code: '+47', flag: '\u{1F1F3}\u{1F1F4}', label: 'Norway' },
-  { code: '+45', flag: '\u{1F1E9}\u{1F1F0}', label: 'Denmark' },
-  { code: '+358', flag: '\u{1F1EB}\u{1F1EE}', label: 'Finland' },
-  { code: '+41', flag: '\u{1F1E8}\u{1F1ED}', label: 'Switzerland' },
-  { code: '+43', flag: '\u{1F1E6}\u{1F1F9}', label: 'Austria' },
-  { code: '+48', flag: '\u{1F1F5}\u{1F1F1}', label: 'Poland' },
-  { code: '+61', flag: '\u{1F1E6}\u{1F1FA}', label: 'Australia' },
-  { code: '+81', flag: '\u{1F1EF}\u{1F1F5}', label: 'Japan' },
-  { code: '+86', flag: '\u{1F1E8}\u{1F1F3}', label: 'China' },
-  { code: '+91', flag: '\u{1F1EE}\u{1F1F3}', label: 'India' },
-  { code: '+55', flag: '\u{1F1E7}\u{1F1F7}', label: 'Brazil' },
-];
 
 const MIN_PASSENGERS = 1;
 const MAX_PASSENGERS = 7;
@@ -48,7 +31,7 @@ export default function BookingForm() {
   const [passengers, setPassengers] = useState(1);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [countryCode, setCountryCode] = useState('+354');
+  const [countryIso, setCountryIso] = useState('IS');
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [resuming, setResuming] = useState(false);
@@ -182,7 +165,7 @@ export default function BookingForm() {
           passenger_count: passengers,
           passenger_name: name,
           email,
-          phone: `${countryCode} ${phone}`,
+          phone: `${dialCodeForCountry(countryIso)} ${phone}`,
         }),
       });
 
@@ -363,13 +346,14 @@ export default function BookingForm() {
             </label>
             <div className="flex gap-2">
               <select
-                value={countryCode}
-                onChange={(e) => setCountryCode(e.target.value)}
-                className="rounded-lg border border-slate-300 px-2 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white flex-shrink-0"
+                value={countryIso}
+                onChange={(e) => setCountryIso(e.target.value)}
+                aria-label="Country code"
+                className="rounded-lg border border-slate-300 px-2 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white flex-shrink-0 max-w-[11rem]"
               >
-                {COUNTRY_CODES.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.flag} {c.code}
+                {COUNTRY_DIAL_CODES_SORTED.map((c) => (
+                  <option key={c.iso2} value={c.iso2}>
+                    {countryFlag(c.iso2)} {formatDialCode(c.dial)} {c.name}
                   </option>
                 ))}
               </select>

@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { API_BASE_URL, PRICE_TABLE_ISK, ROUTE } from '../config';
+import { API_BASE_URL, PRICE_TABLE_ISK, ROUTE, SHUTTLE_CAPACITY } from '../config';
 import {
   COUNTRY_DIAL_CODES_SORTED,
   countryOptionLabel,
@@ -19,7 +19,11 @@ interface PendingBooking {
 }
 
 const MIN_PASSENGERS = 1;
-const MAX_PASSENGERS = 7;
+
+interface DepartureSlot {
+  time: string;
+  remaining_seats: number;
+}
 const CUTOFF_HOUR = 22;
 
 export default function BookingForm() {
@@ -37,8 +41,14 @@ export default function BookingForm() {
   const [error, setError] = useState('');
   const [pendingBooking, setPendingBooking] = useState<PendingBooking | null>(null);
   const [blackoutDates, setBlackoutDates] = useState<Set<string>>(new Set());
-  const [availableTimes, setAvailableTimes] = useState<string[]>([]);
+  const [departureSlots, setDepartureSlots] = useState<DepartureSlot[]>([]);
   const [timesLoading, setTimesLoading] = useState(false);
+
+  const selectedSlot = departureSlots.find((s) => s.time === time);
+  const maxPassengers = selectedSlot
+    ? Math.min(SHUTTLE_CAPACITY, selectedSlot.remaining_seats)
+    : SHUTTLE_CAPACITY;
+  const availableSlots = departureSlots.filter((s) => s.remaining_seats > 0);
 
   const totalPrice = PRICE_TABLE_ISK[passengers] ?? 0;
 
@@ -53,24 +63,34 @@ export default function BookingForm() {
 
   useEffect(() => {
     if (!date) {
-      setAvailableTimes([]);
+      setDepartureSlots([]);
       setTime('');
       return;
     }
     setTimesLoading(true);
     fetch(`${API_BASE_URL}/api/shuttle-times?date=${encodeURIComponent(date)}`)
-      .then((r) => (r.ok ? r.json() : { times: [] }))
-      .then((data: { times?: string[] }) => {
-        const times = data.times ?? [];
-        setAvailableTimes(times);
-        setTime((prev) => (prev && times.includes(prev) ? prev : ''));
+      .then((r) => (r.ok ? r.json() : { slots: [] }))
+      .then((data: { slots?: DepartureSlot[] }) => {
+        const slots = data.slots ?? [];
+        setDepartureSlots(slots);
+        const openTimes = slots
+          .filter((s) => s.remaining_seats > 0)
+          .map((s) => s.time);
+        setTime((prev) => (prev && openTimes.includes(prev) ? prev : ''));
       })
       .catch(() => {
-        setAvailableTimes([]);
+        setDepartureSlots([]);
         setTime('');
       })
       .finally(() => setTimesLoading(false));
   }, [date]);
+
+  useEffect(() => {
+    if (maxPassengers < MIN_PASSENGERS) return;
+    if (passengers > maxPassengers) {
+      setPassengers(maxPassengers);
+    }
+  }, [maxPassengers, passengers]);
 
   useEffect(() => {
     const storedId = sessionStorage.getItem(PENDING_BOOKING_KEY);
@@ -150,8 +170,16 @@ export default function BookingForm() {
         throw new Error('This date is not available for booking. Please choose another day.');
       }
 
-      if (!availableTimes.includes(time)) {
+      if (!availableSlots.some((s) => s.time === time)) {
         throw new Error('Please select a valid departure time for this date.');
+      }
+
+      if (passengers > maxPassengers) {
+        throw new Error(
+          maxPassengers === 0
+            ? 'This departure is full. Please choose another time.'
+            : `Only ${maxPassengers} seat${maxPassengers === 1 ? '' : 's'} remaining for this departure.`,
+        );
       }
 
       const res = await fetch(`${API_BASE_URL}/api/bookings`, {
@@ -252,17 +280,29 @@ export default function BookingForm() {
                   ? 'Select a date first'
                   : timesLoading
                     ? 'Loading times...'
-                    : availableTimes.length === 0
+                    : departureSlots.length === 0
                       ? 'No departures this day'
-                      : 'Select time'}
+                      : availableSlots.length === 0
+                        ? 'All departures full'
+                        : 'Select time'}
               </option>
-              {availableTimes.map((t) => (
-                <option key={t} value={t}>{t}</option>
+              {availableSlots.map((slot) => (
+                <option key={slot.time} value={slot.time}>
+                  {slot.time}
+                  {slot.remaining_seats < SHUTTLE_CAPACITY
+                    ? ` (${slot.remaining_seats} seat${slot.remaining_seats === 1 ? '' : 's'} left)`
+                    : ''}
+                </option>
               ))}
             </select>
-            {date && !timesLoading && availableTimes.length === 0 && (
+            {date && !timesLoading && departureSlots.length === 0 && (
               <p className="mt-1 text-xs text-amber-700">
                 No shuttle departures are scheduled for this date. Choose another date.
+              </p>
+            )}
+            {date && !timesLoading && departureSlots.length > 0 && availableSlots.length === 0 && (
+              <p className="mt-1 text-xs text-amber-700">
+                All departures on this date are fully booked. Choose another date or time.
               </p>
             )}
           </div>
@@ -277,7 +317,7 @@ export default function BookingForm() {
             <button
               type="button"
               onClick={() => setPassengers(Math.max(MIN_PASSENGERS, passengers - 1))}
-              disabled={passengers <= MIN_PASSENGERS}
+              disabled={passengers <= MIN_PASSENGERS || maxPassengers < MIN_PASSENGERS}
               className="w-10 h-10 rounded-lg border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               −
@@ -286,26 +326,31 @@ export default function BookingForm() {
               id="passengers"
               type="number"
               min={MIN_PASSENGERS}
-              max={MAX_PASSENGERS}
+              max={maxPassengers}
               required
               value={passengers}
+              disabled={!time || maxPassengers < MIN_PASSENGERS}
               onChange={(e) => {
                 const v = parseInt(e.target.value) || MIN_PASSENGERS;
-                setPassengers(Math.min(MAX_PASSENGERS, Math.max(MIN_PASSENGERS, v)));
+                setPassengers(Math.min(maxPassengers, Math.max(MIN_PASSENGERS, v)));
               }}
               className="w-20 text-center rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
             />
             <button
               type="button"
-              onClick={() => setPassengers(Math.min(MAX_PASSENGERS, passengers + 1))}
-              disabled={passengers >= MAX_PASSENGERS}
+              onClick={() => setPassengers(Math.min(maxPassengers, passengers + 1))}
+              disabled={passengers >= maxPassengers || maxPassengers < MIN_PASSENGERS}
               className="w-10 h-10 rounded-lg border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
               +
             </button>
           </div>
           <p className="mt-1 text-xs text-slate-400">
-            {MIN_PASSENGERS}–{MAX_PASSENGERS} passengers (shuttle capacity)
+            {!time
+              ? `Up to ${SHUTTLE_CAPACITY} passengers per departure (shuttle capacity)`
+              : maxPassengers < SHUTTLE_CAPACITY
+                ? `${maxPassengers} seat${maxPassengers === 1 ? '' : 's'} remaining for this departure`
+                : `Up to ${SHUTTLE_CAPACITY} passengers for this departure`}
           </p>
         </div>
 
@@ -425,7 +470,8 @@ export default function BookingForm() {
             || (Boolean(date) && blackoutDates.has(date))
             || !time
             || timesLoading
-            || availableTimes.length === 0
+            || maxPassengers < MIN_PASSENGERS
+            || availableSlots.length === 0
           }
           className="w-full bg-sky-500 hover:bg-sky-400 disabled:bg-sky-300 text-white font-semibold py-3 rounded-xl shadow-sm transition-colors cursor-pointer disabled:cursor-not-allowed"
         >

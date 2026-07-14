@@ -135,8 +135,13 @@ class ShuttleTimeSlotResponse(BaseModel):
     created_at: datetime
 
 
+class DepartureSlotPublic(BaseModel):
+    time: str
+    remaining_seats: int
+
+
 class ShuttleTimesPublicResponse(BaseModel):
-    times: list[str]
+    slots: list[DepartureSlotPublic]
 
 
 class ShuttleTimeExceptionCreate(BaseModel):

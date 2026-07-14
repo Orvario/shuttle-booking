@@ -1,6 +1,8 @@
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+export const SHUTTLE_CAPACITY = 7;
+
 export const PRICE_TABLE_ISK: Record<number, number> = {
   1: 4400,
   2: 4400,

@@ -25,6 +25,7 @@ from app.schemas import (
     ShuttleTimeExceptionResponse,
     ShuttleTimeSlotCreate,
     ShuttleTimeSlotResponse,
+    DepartureSlotPublic,
     ShuttleTimesPublicResponse,
 )
 from app.settings import settings
@@ -45,7 +46,7 @@ PRICE_TABLE_ISK = {
     7: 7900,
 }
 
-MAX_PASSENGERS = 7
+SHUTTLE_CAPACITY = 7
 
 PENDING_BOOKING_WINDOW_HOURS = 24
 
@@ -188,6 +189,37 @@ def _count_bookings_for_shuttle_slot(db: Session, slot: ShuttleTimeSlot) -> int:
     return 0
 
 
+def _booked_passengers_for_departure(
+    db: Session,
+    date: str,
+    time: str,
+    *,
+    exclude_booking_id: str | None = None,
+) -> int:
+    """Passengers already reserved on this departure (pending or paid)."""
+    q = db.query(func.sum(Booking.passenger_count)).filter(
+        Booking.date == date,
+        Booking.time == time,
+        Booking.status.in_(["pending", "paid"]),
+    )
+    if exclude_booking_id:
+        q = q.filter(Booking.id != exclude_booking_id)
+    return int(q.scalar() or 0)
+
+
+def _remaining_seats_for_departure(
+    db: Session,
+    date: str,
+    time: str,
+    *,
+    exclude_booking_id: str | None = None,
+) -> int:
+    booked = _booked_passengers_for_departure(
+        db, date, time, exclude_booking_id=exclude_booking_id
+    )
+    return max(0, SHUTTLE_CAPACITY - booked)
+
+
 def _find_recent_duplicate(
     db: Session,
     req: BookingRequest,
@@ -264,10 +296,10 @@ async def create_booking(
 ):
     if req.direction != "to_airport":
         raise HTTPException(status_code=400, detail="Only hotel-to-airport shuttles available")
-    if req.passenger_count < 1 or req.passenger_count > MAX_PASSENGERS:
+    if req.passenger_count < 1 or req.passenger_count > SHUTTLE_CAPACITY:
         raise HTTPException(
             status_code=400,
-            detail=f"1-{MAX_PASSENGERS} passengers allowed",
+            detail=f"1-{SHUTTLE_CAPACITY} passengers allowed per booking",
         )
 
     from datetime import datetime, timedelta, timezone
@@ -329,6 +361,21 @@ async def create_booking(
         raise HTTPException(
             status_code=400,
             detail="This departure date is not available for booking.",
+        )
+
+    remaining = _remaining_seats_for_departure(db, req.date, req.time)
+    if req.passenger_count > remaining:
+        if remaining == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="This departure is full. Please choose another time.",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Only {remaining} seat{'s' if remaining != 1 else ''} "
+                f"remaining for this departure."
+            ),
         )
 
     booking = Booking(
@@ -433,7 +480,15 @@ def get_shuttle_times_public(
         datetime.strptime(date, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format") from None
-    return ShuttleTimesPublicResponse(times=_departure_times_for_date(db, date))
+    times = _departure_times_for_date(db, date)
+    slots = [
+        DepartureSlotPublic(
+            time=t,
+            remaining_seats=_remaining_seats_for_departure(db, date, t),
+        )
+        for t in times
+    ]
+    return ShuttleTimesPublicResponse(slots=slots)
 
 
 def _webhook_success(payload: dict) -> bool:

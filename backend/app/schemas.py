@@ -20,8 +20,19 @@ class BookingRequest(BaseModel):
     time: str
     passenger_count: int
     passenger_name: str
+    room_number: str
     email: EmailStr
     phone: str
+
+    @field_validator("room_number")
+    @classmethod
+    def validate_room_number(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("Room number is required")
+        if len(s) > 50:
+            raise ValueError("Room number is too long")
+        return s
 
 
 class BookingResponse(BaseModel):
@@ -31,6 +42,7 @@ class BookingResponse(BaseModel):
     time: str
     passenger_count: int
     passenger_name: str
+    room_number: str = ""
     email: str
     phone: str
     amount_isk: int

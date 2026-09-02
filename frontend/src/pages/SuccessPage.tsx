@@ -13,6 +13,7 @@ interface BookingInfo {
   time: string;
   passenger_count: number;
   passenger_name: string;
+  room_number?: string;
   email: string;
   status: string;
   amount_isk: number;
@@ -154,6 +155,12 @@ export default function SuccessPage() {
               <span className="text-slate-500">Name</span>
               <span className="font-medium text-slate-800">{booking.passenger_name}</span>
             </div>
+            {booking.room_number && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Room</span>
+                <span className="font-medium text-slate-800">{booking.room_number}</span>
+              </div>
+            )}
             {isPaid && (
               <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
                 <span className="text-slate-500">Total Paid</span>

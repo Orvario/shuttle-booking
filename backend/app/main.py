@@ -75,6 +75,13 @@ with engine.connect() as conn:
         ))
         conn.commit()
         logger.info("Added payment_url column to bookings table")
+    columns = [c["name"] for c in inspector.get_columns("bookings")]
+    if "room_number" not in columns:
+        conn.execute(text(
+            "ALTER TABLE bookings ADD COLUMN room_number VARCHAR(50) DEFAULT ''"
+        ))
+        conn.commit()
+        logger.info("Added room_number column to bookings table")
 
 
 def _seed_default_shuttle_slots_if_empty() -> None:
@@ -384,6 +391,7 @@ async def create_booking(
         time=req.time,
         passenger_count=req.passenger_count,
         passenger_name=req.passenger_name,
+        room_number=req.room_number,
         email=req.email,
         phone=req.phone,
         amount_isk=amount,
@@ -612,6 +620,7 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
             time=booking.time,
             passenger_count=booking.passenger_count,
             amount_isk=booking.amount_isk,
+            room_number=booking.room_number or "",
         )
 
         send_hotel_notification(
@@ -623,6 +632,7 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
             amount_isk=booking.amount_isk,
             email=booking.email,
             phone=booking.phone or "",
+            room_number=booking.room_number or "",
         )
     else:
         booking.status = "failed"
@@ -892,6 +902,7 @@ def mock_confirm_booking(
         time=booking.time,
         passenger_count=booking.passenger_count,
         amount_isk=booking.amount_isk,
+        room_number=booking.room_number or "",
     )
 
     send_hotel_notification(
@@ -903,6 +914,7 @@ def mock_confirm_booking(
         amount_isk=booking.amount_isk,
         email=booking.email,
         phone=booking.phone or "",
+        room_number=booking.room_number or "",
     )
 
     return {"status": "confirmed", "booking_id": booking.id}

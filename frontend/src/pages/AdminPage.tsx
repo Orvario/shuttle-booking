@@ -9,6 +9,7 @@ interface Booking {
   time: string;
   passenger_count: number;
   passenger_name: string;
+  room_number?: string;
   email: string;
   phone: string;
   amount_isk: number;
@@ -108,6 +109,7 @@ function PendingBookingCard({
             {booking.passenger_count} pax &middot; {booking.date} {booking.time} &middot; {booking.amount_isk.toLocaleString()} ISK
           </div>
           <div className="text-xs text-slate-400 mt-0.5">
+            {booking.room_number ? `Room ${booking.room_number} · ` : ''}
             {booking.email} &middot; {booking.phone} &middot; Created {createdLabel}
           </div>
         </div>
@@ -136,7 +138,9 @@ function BookingCard({ booking }: { booking: Booking }) {
         <div className="min-w-0">
           <div className="font-medium text-slate-900 truncate">{booking.passenger_name}</div>
           <div className="text-sm text-slate-500">
-            {booking.passenger_count} passenger{booking.passenger_count > 1 ? 's' : ''} &middot; {directionLabel}
+            {booking.passenger_count} passenger{booking.passenger_count > 1 ? 's' : ''}
+            {booking.room_number ? ` · Room ${booking.room_number}` : ''}
+            {' · '}{directionLabel}
           </div>
         </div>
       </div>

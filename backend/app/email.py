@@ -22,12 +22,21 @@ def _build_confirmation_html(
     time: str,
     passenger_count: int,
     amount_isk: int,
+    room_number: str = "",
 ) -> str:
     direction_label = (
         "Airport → Flyers Hotel"
         if direction == "to_hotel"
         else "Flyers Hotel → Airport"
     )
+    room_row = ""
+    if room_number:
+        room_row = f"""\
+    <tr>
+      <td style="padding: 10px 0; color: #64748b; border-bottom: 1px solid #e2e8f0;">Room</td>
+      <td style="padding: 10px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #e2e8f0; text-align: right;">{room_number}</td>
+    </tr>
+"""
 
     return f"""\
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 24px;">
@@ -49,7 +58,7 @@ def _build_confirmation_html(
       <td style="padding: 10px 0; color: #64748b; border-bottom: 1px solid #e2e8f0;">Time</td>
       <td style="padding: 10px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #e2e8f0; text-align: right;">{time}</td>
     </tr>
-    <tr>
+{room_row}    <tr>
       <td style="padding: 10px 0; color: #64748b; border-bottom: 1px solid #e2e8f0;">Passengers</td>
       <td style="padding: 10px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #e2e8f0; text-align: right;">{passenger_count}</td>
     </tr>
@@ -75,12 +84,14 @@ def _build_hotel_notification_html(
     amount_isk: int,
     email: str,
     phone: str,
+    room_number: str = "",
 ) -> str:
     direction_label = (
         "Airport → Flyers Hotel"
         if direction == "to_hotel"
         else "Flyers Hotel → Airport"
     )
+    room_display = room_number or "—"
 
     return f"""\
 <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 24px;">
@@ -93,6 +104,10 @@ def _build_hotel_notification_html(
     <tr>
       <td style="padding: 10px 0; color: #64748b; border-bottom: 1px solid #e2e8f0;">Guest</td>
       <td style="padding: 10px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #e2e8f0; text-align: right;">{passenger_name}</td>
+    </tr>
+    <tr>
+      <td style="padding: 10px 0; color: #64748b; border-bottom: 1px solid #e2e8f0;">Room</td>
+      <td style="padding: 10px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #e2e8f0; text-align: right;">{room_display}</td>
     </tr>
     <tr>
       <td style="padding: 10px 0; color: #64748b; border-bottom: 1px solid #e2e8f0;">Email</td>
@@ -140,6 +155,7 @@ def send_hotel_notification(
     amount_isk: int,
     email: str,
     phone: str,
+    room_number: str = "",
 ) -> None:
     html = _build_hotel_notification_html(
         passenger_name=passenger_name,
@@ -150,6 +166,7 @@ def send_hotel_notification(
         amount_isk=amount_isk,
         email=email,
         phone=phone,
+        room_number=room_number,
     )
 
     if not settings.resend_api_key:
@@ -186,6 +203,7 @@ def send_confirmation_email(
     time: str,
     passenger_count: int,
     amount_isk: int,
+    room_number: str = "",
 ) -> None:
     html = _build_confirmation_html(
         passenger_name=passenger_name,
@@ -194,6 +212,7 @@ def send_confirmation_email(
         time=time,
         passenger_count=passenger_count,
         amount_isk=amount_isk,
+        room_number=room_number,
     )
 
     if not settings.resend_api_key:

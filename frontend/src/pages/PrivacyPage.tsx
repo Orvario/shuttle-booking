@@ -36,6 +36,7 @@ export default function PrivacyPage() {
             <p className="mb-3">When you make a booking, we collect the following information:</p>
             <ul className="list-disc list-inside space-y-1 text-slate-600">
               <li>Full name</li>
+              <li>Hotel room number</li>
               <li>Email address</li>
               <li>Phone number (including country code)</li>
               <li>Booking details: date, time, and number of passengers</li>

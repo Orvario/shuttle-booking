@@ -57,6 +57,59 @@ class BookingCreated(BaseModel):
     already_paid: bool = False
 
 
+class AdminManualBookingCreate(BaseModel):
+    """Staff-entered booking: counts toward capacity, no online payment."""
+
+    date: str
+    time: str
+    passenger_count: int
+    passenger_name: str
+    room_number: str
+    email: str = ""
+    phone: str = ""
+    send_emails: bool = False
+
+    @field_validator("date")
+    @classmethod
+    def validate_date(cls, v: str) -> str:
+        return _validate_yyyy_mm_dd(v)
+
+    @field_validator("time")
+    @classmethod
+    def validate_time(cls, v: str) -> str:
+        return _normalize_hh_mm(v)
+
+    @field_validator("passenger_name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("Passenger name is required")
+        if len(s) > 200:
+            raise ValueError("Passenger name is too long")
+        return s
+
+    @field_validator("room_number")
+    @classmethod
+    def validate_room_number(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("Room number is required")
+        if len(s) > 50:
+            raise ValueError("Room number is too long")
+        return s
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        return v.strip()
+
+
 class BookingPayment(BaseModel):
     booking_id: str
     payment_url: str

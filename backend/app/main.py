@@ -14,6 +14,7 @@ from app.database import Base, SessionLocal, engine, get_db
 from app.email import send_confirmation_email, send_hotel_notification
 from app.models import BlackoutDate, Booking, ShuttleTimeException, ShuttleTimeSlot
 from app.schemas import (
+    AdminManualBookingCreate,
     BlackoutDateCreate,
     BlackoutDateResponse,
     BookingCreated,
@@ -917,6 +918,104 @@ def mock_confirm_booking(
     )
 
     return {"status": "confirmed", "booking_id": booking.id}
+
+
+@app.post("/api/admin/bookings", response_model=BookingResponse)
+def admin_create_manual_booking(
+    req: AdminManualBookingCreate,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_verify_admin),
+):
+    """Insert a paid booking manually (cash/desk). Counts toward shuttle capacity."""
+    if req.passenger_count < 1 or req.passenger_count > SHUTTLE_CAPACITY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"1-{SHUTTLE_CAPACITY} passengers allowed per booking",
+        )
+
+    allowed_times = _departure_times_for_date(db, req.date)
+    if req.time not in allowed_times:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid departure time for this date. Add a schedule rule first.",
+        )
+
+    remaining = _remaining_seats_for_departure(db, req.date, req.time)
+    if req.passenger_count > remaining:
+        if remaining == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="This departure is full.",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Only {remaining} seat{'s' if remaining != 1 else ''} "
+                f"remaining for this departure."
+            ),
+        )
+
+    amount = PRICE_TABLE_ISK.get(req.passenger_count)
+    if amount is None:
+        raise HTTPException(status_code=400, detail="Invalid passenger count")
+
+    if req.send_emails and not req.email:
+        raise HTTPException(
+            status_code=400,
+            detail="Email is required when sending confirmation emails.",
+        )
+
+    booking = Booking(
+        direction="to_airport",
+        date=req.date,
+        time=req.time,
+        passenger_count=req.passenger_count,
+        passenger_name=req.passenger_name,
+        room_number=req.room_number,
+        email=req.email or "manual@flyershotel.local",
+        phone=req.phone or "",
+        amount_isk=amount,
+        payment_reference="manual_admin",
+        status="paid",
+    )
+    db.add(booking)
+    db.commit()
+    db.refresh(booking)
+
+    logger.info(
+        "Manual booking %s created by admin for %s (room %s, %s pax, %s %s)",
+        booking.id,
+        booking.passenger_name,
+        booking.room_number,
+        booking.passenger_count,
+        booking.date,
+        booking.time,
+    )
+
+    if req.send_emails:
+        send_confirmation_email(
+            to_email=booking.email,
+            passenger_name=booking.passenger_name,
+            direction=booking.direction,
+            date=booking.date,
+            time=booking.time,
+            passenger_count=booking.passenger_count,
+            amount_isk=booking.amount_isk,
+            room_number=booking.room_number or "",
+        )
+        send_hotel_notification(
+            passenger_name=booking.passenger_name,
+            direction=booking.direction,
+            date=booking.date,
+            time=booking.time,
+            passenger_count=booking.passenger_count,
+            amount_isk=booking.amount_isk,
+            email=booking.email,
+            phone=booking.phone or "",
+            room_number=booking.room_number or "",
+        )
+
+    return booking
 
 
 @app.get("/api/admin/bookings/calendar", response_model=list[CalendarDay])

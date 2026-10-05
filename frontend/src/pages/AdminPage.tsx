@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, type FormEvent } from 'react';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, PRICE_TABLE_ISK, SHUTTLE_CAPACITY } from '../config';
 import MiniCalendar from '../components/MiniCalendar';
 
 interface Booking {
@@ -42,6 +42,11 @@ interface ShuttleTimeExceptionRow {
   calendar_date: string;
   departure_time: string;
   created_at: string;
+}
+
+interface DepartureSlot {
+  time: string;
+  remaining_seats: number;
 }
 
 const WEEKDAY_LABELS = [
@@ -206,6 +211,18 @@ export default function AdminPage() {
 
   const [timeExceptions, setTimeExceptions] = useState<ShuttleTimeExceptionRow[]>([]);
 
+  const [manualTime, setManualTime] = useState('');
+  const [manualName, setManualName] = useState('');
+  const [manualRoom, setManualRoom] = useState('');
+  const [manualPax, setManualPax] = useState(1);
+  const [manualEmail, setManualEmail] = useState('');
+  const [manualPhone, setManualPhone] = useState('');
+  const [manualSendEmails, setManualSendEmails] = useState(false);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualFeedback, setManualFeedback] = useState('');
+  const [manualError, setManualError] = useState('');
+  const [departureSlots, setDepartureSlots] = useState<DepartureSlot[]>([]);
+
   const fetchCalendar = useCallback(async (month: string) => {
     if (!password) return;
     try {
@@ -335,6 +352,34 @@ export default function AdminPage() {
       // non-critical, pending list will just be empty
     }
   }, [password]);
+
+  const fetchDepartureSlots = useCallback(async () => {
+    if (!date) {
+      setDepartureSlots([]);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/shuttle-times?date=${encodeURIComponent(date)}`,
+      );
+      if (!res.ok) {
+        setDepartureSlots([]);
+        return;
+      }
+      const data: { slots?: DepartureSlot[] } = await res.json();
+      const slots = data.slots ?? [];
+      setDepartureSlots(slots);
+      setManualTime((prev) => {
+        if (prev && slots.some((s) => s.time === prev && s.remaining_seats > 0)) {
+          return prev;
+        }
+        const firstOpen = slots.find((s) => s.remaining_seats > 0);
+        return firstOpen?.time ?? '';
+      });
+    } catch {
+      setDepartureSlots([]);
+    }
+  }, [date]);
 
   async function handleConfirmBooking(bookingId: string) {
     setConfirmingId(bookingId);
@@ -608,8 +653,83 @@ export default function AdminPage() {
       fetchBlackouts();
       fetchShuttleSlots();
       fetchTimeExceptions();
+      fetchDepartureSlots();
     }
-  }, [authenticated, fetchBookings, fetchPendingBookings, fetchCalendar, fetchBlackouts, fetchShuttleSlots, fetchTimeExceptions, currentMonth]);
+  }, [authenticated, fetchBookings, fetchPendingBookings, fetchCalendar, fetchBlackouts, fetchShuttleSlots, fetchTimeExceptions, fetchDepartureSlots, currentMonth]);
+
+  async function handleAddManualBooking(e: FormEvent) {
+    e.preventDefault();
+    setManualError('');
+    setManualFeedback('');
+    if (!manualTime) {
+      setManualError('Select a departure time.');
+      return;
+    }
+    if (!manualName.trim() || !manualRoom.trim()) {
+      setManualError('Name and room number are required.');
+      return;
+    }
+    if (manualSendEmails && !manualEmail.trim()) {
+      setManualError('Email is required when sending confirmation emails.');
+      return;
+    }
+
+    setManualSaving(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/bookings`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${password}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          date,
+          time: manualTime,
+          passenger_count: manualPax,
+          passenger_name: manualName.trim(),
+          room_number: manualRoom.trim(),
+          email: manualEmail.trim(),
+          phone: manualPhone.trim(),
+          send_emails: manualSendEmails,
+        }),
+      });
+      if (res.status === 401) {
+        sessionStorage.removeItem('admin_pw');
+        setAuthenticated(false);
+        setPassword('');
+        setPwError('Invalid password');
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        const detail = body?.detail;
+        const message =
+          typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join(', ')
+              : 'Could not add booking';
+        throw new Error(message);
+      }
+      const created: Booking = await res.json();
+      setManualFeedback(
+        `Added ${created.passenger_name} (room ${created.room_number}) — ${created.passenger_count} pax at ${created.time}.`,
+      );
+      setManualName('');
+      setManualRoom('');
+      setManualEmail('');
+      setManualPhone('');
+      setManualPax(1);
+      setManualSendEmails(false);
+      fetchBookings();
+      fetchCalendar(currentMonth);
+      fetchDepartureSlots();
+    } catch (err) {
+      setManualError(err instanceof Error ? err.message : 'Failed to add booking');
+    } finally {
+      setManualSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (!authenticated) return;
@@ -711,6 +831,13 @@ export default function AdminPage() {
 
   const totalPassengers = bookings.reduce((sum, b) => sum + b.passenger_count, 0);
   const totalRevenue = bookings.reduce((sum, b) => sum + b.amount_isk, 0);
+
+  const openManualSlots = departureSlots.filter((s) => s.remaining_seats > 0);
+  const selectedManualSlot = departureSlots.find((s) => s.time === manualTime);
+  const manualMaxPax = selectedManualSlot
+    ? Math.min(SHUTTLE_CAPACITY, selectedManualSlot.remaining_seats)
+    : SHUTTLE_CAPACITY;
+  const manualPrice = PRICE_TABLE_ISK[manualPax] ?? 0;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -991,6 +1118,164 @@ export default function AdminPage() {
         {/* Selected date heading */}
         <div className="text-center">
           <div className="text-lg font-bold text-slate-900">{formatDate(date)}</div>
+        </div>
+
+        {/* Manual passenger insert */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Add passengers manually</h2>
+            <p className="text-sm text-slate-500 mt-1">
+              For desk or phone bookings. Counts toward the {SHUTTLE_CAPACITY}-seat capacity
+              for the selected date. Marked as paid (no online payment).
+            </p>
+          </div>
+
+          <form onSubmit={handleAddManualBooking} className="space-y-3">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="manual-time" className="block text-xs font-medium text-slate-600 mb-1">
+                  Departure time
+                </label>
+                <select
+                  id="manual-time"
+                  value={manualTime}
+                  onChange={(e) => {
+                    const nextTime = e.target.value;
+                    setManualTime(nextTime);
+                    const slot = departureSlots.find((s) => s.time === nextTime);
+                    const max = slot
+                      ? Math.min(SHUTTLE_CAPACITY, slot.remaining_seats)
+                      : SHUTTLE_CAPACITY;
+                    setManualPax((prev) => Math.min(prev, Math.max(1, max)));
+                    setManualError('');
+                    setManualFeedback('');
+                  }}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white"
+                >
+                  {openManualSlots.length === 0 ? (
+                    <option value="">No open departures</option>
+                  ) : (
+                    openManualSlots.map((slot) => (
+                      <option key={slot.time} value={slot.time}>
+                        {slot.time}
+                        {slot.remaining_seats < SHUTTLE_CAPACITY
+                          ? ` (${slot.remaining_seats} left)`
+                          : ''}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="manual-pax" className="block text-xs font-medium text-slate-600 mb-1">
+                  Passengers
+                </label>
+                <select
+                  id="manual-pax"
+                  value={manualPax}
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    setManualPax(Math.min(manualMaxPax, Math.max(1, next)));
+                    setManualError('');
+                  }}
+                  disabled={manualMaxPax < 1}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white disabled:bg-slate-50"
+                >
+                  {Array.from({ length: Math.max(manualMaxPax, 0) }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      {n} — {PRICE_TABLE_ISK[n]?.toLocaleString() ?? '—'} ISK
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="manual-name" className="block text-xs font-medium text-slate-600 mb-1">
+                  Guest name
+                </label>
+                <input
+                  id="manual-name"
+                  type="text"
+                  required
+                  value={manualName}
+                  onChange={(e) => setManualName(e.target.value)}
+                  placeholder="Full name"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+              <div>
+                <label htmlFor="manual-room" className="block text-xs font-medium text-slate-600 mb-1">
+                  Room number
+                </label>
+                <input
+                  id="manual-room"
+                  type="text"
+                  required
+                  value={manualRoom}
+                  onChange={(e) => setManualRoom(e.target.value)}
+                  placeholder="e.g. 204"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+              <div>
+                <label htmlFor="manual-email" className="block text-xs font-medium text-slate-600 mb-1">
+                  Email <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  id="manual-email"
+                  type="email"
+                  value={manualEmail}
+                  onChange={(e) => setManualEmail(e.target.value)}
+                  placeholder="guest@example.com"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+              <div>
+                <label htmlFor="manual-phone" className="block text-xs font-medium text-slate-600 mb-1">
+                  Phone <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  id="manual-phone"
+                  type="tel"
+                  value={manualPhone}
+                  onChange={(e) => setManualPhone(e.target.value)}
+                  placeholder="+354 …"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+                />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={manualSendEmails}
+                onChange={(e) => setManualSendEmails(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              Send confirmation + hotel emails
+            </label>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                disabled={manualSaving || openManualSlots.length === 0 || manualMaxPax < 1}
+                className="px-4 py-2 bg-sky-600 hover:bg-sky-500 disabled:bg-sky-300 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer disabled:cursor-not-allowed"
+              >
+                {manualSaving ? 'Adding...' : `Add booking (${manualPrice.toLocaleString()} ISK)`}
+              </button>
+              {openManualSlots.length === 0 && (
+                <span className="text-sm text-amber-700">
+                  No open departures on this date (full or none scheduled).
+                </span>
+              )}
+            </div>
+
+            {manualError && (
+              <p className="text-sm text-red-600">{manualError}</p>
+            )}
+            {manualFeedback && (
+              <p className="text-sm text-emerald-700">{manualFeedback}</p>
+            )}
+          </form>
         </div>
 
         {/* Summary stats */}

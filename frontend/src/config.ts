@@ -3,6 +3,9 @@ export const API_BASE_URL =
 
 export const SHUTTLE_CAPACITY = 6;
 
+/** Max bags selectable on a booking (dropdown). */
+export const MAX_BAGS = 12;
+
 export const PRICE_TABLE_ISK: Record<number, number> = {
   1: 4400,
   2: 4400,

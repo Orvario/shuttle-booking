@@ -82,6 +82,13 @@ with engine.connect() as conn:
         ))
         conn.commit()
         logger.info("Added room_number column to bookings table")
+    columns = [c["name"] for c in inspector.get_columns("bookings")]
+    if "bag_count" not in columns:
+        conn.execute(text(
+            "ALTER TABLE bookings ADD COLUMN bag_count INTEGER DEFAULT 0"
+        ))
+        conn.commit()
+        logger.info("Added bag_count column to bookings table")
 
 
 def _seed_default_shuttle_slots_if_empty() -> None:
@@ -390,6 +397,7 @@ async def create_booking(
         date=req.date,
         time=req.time,
         passenger_count=req.passenger_count,
+        bag_count=req.bag_count,
         passenger_name=req.passenger_name,
         room_number=req.room_number,
         email=req.email,
@@ -621,6 +629,7 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
             passenger_count=booking.passenger_count,
             amount_isk=booking.amount_isk,
             room_number=booking.room_number or "",
+            bag_count=booking.bag_count or 0,
         )
 
         send_hotel_notification(
@@ -633,6 +642,7 @@ async def straumur_webhook(request: Request, db: Session = Depends(get_db)):
             email=booking.email,
             phone=booking.phone or "",
             room_number=booking.room_number or "",
+            bag_count=booking.bag_count or 0,
         )
     else:
         booking.status = "failed"
@@ -903,6 +913,7 @@ def mock_confirm_booking(
         passenger_count=booking.passenger_count,
         amount_isk=booking.amount_isk,
         room_number=booking.room_number or "",
+        bag_count=booking.bag_count or 0,
     )
 
     send_hotel_notification(
@@ -915,6 +926,7 @@ def mock_confirm_booking(
         email=booking.email,
         phone=booking.phone or "",
         room_number=booking.room_number or "",
+        bag_count=booking.bag_count or 0,
     )
 
     return {"status": "confirmed", "booking_id": booking.id}
@@ -970,6 +982,7 @@ def admin_create_manual_booking(
         date=req.date,
         time=req.time,
         passenger_count=req.passenger_count,
+        bag_count=req.bag_count,
         passenger_name=req.passenger_name,
         room_number=req.room_number,
         email=req.email or "manual@flyershotel.local",
@@ -1002,6 +1015,7 @@ def admin_create_manual_booking(
             passenger_count=booking.passenger_count,
             amount_isk=booking.amount_isk,
             room_number=booking.room_number or "",
+            bag_count=booking.bag_count or 0,
         )
         send_hotel_notification(
             passenger_name=booking.passenger_name,
@@ -1013,6 +1027,7 @@ def admin_create_manual_booking(
             email=booking.email,
             phone=booking.phone or "",
             room_number=booking.room_number or "",
+            bag_count=booking.bag_count or 0,
         )
 
     return booking

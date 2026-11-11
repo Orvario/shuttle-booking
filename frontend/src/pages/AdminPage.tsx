@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, type FormEvent } from 'react';
-import { API_BASE_URL, PRICE_TABLE_ISK, SHUTTLE_CAPACITY } from '../config';
+import { API_BASE_URL, MAX_BAGS, PRICE_TABLE_ISK, SHUTTLE_CAPACITY } from '../config';
 import { HOTEL_ROOM_NUMBERS } from '../hotelRooms';
 import MiniCalendar from '../components/MiniCalendar';
 
@@ -9,6 +9,7 @@ interface Booking {
   date: string;
   time: string;
   passenger_count: number;
+  bag_count?: number;
   passenger_name: string;
   room_number?: string;
   email: string;
@@ -112,7 +113,9 @@ function PendingBookingCard({
         <div className="min-w-0">
           <div className="font-medium text-slate-900 truncate">{booking.passenger_name}</div>
           <div className="text-sm text-slate-600">
-            {booking.passenger_count} pax &middot; {booking.date} {booking.time} &middot; {booking.amount_isk.toLocaleString()} ISK
+            {booking.passenger_count} pax
+            {typeof booking.bag_count === 'number' ? ` · ${booking.bag_count} bag${booking.bag_count === 1 ? '' : 's'}` : ''}
+            {' · '}{booking.date} {booking.time} &middot; {booking.amount_isk.toLocaleString()} ISK
           </div>
           <div className="text-xs text-slate-400 mt-0.5">
             {booking.room_number ? `Room ${booking.room_number} · ` : ''}
@@ -145,6 +148,7 @@ function BookingCard({ booking }: { booking: Booking }) {
           <div className="font-medium text-slate-900 truncate">{booking.passenger_name}</div>
           <div className="text-sm text-slate-500">
             {booking.passenger_count} passenger{booking.passenger_count > 1 ? 's' : ''}
+            {typeof booking.bag_count === 'number' ? ` · ${booking.bag_count} bag${booking.bag_count === 1 ? '' : 's'}` : ''}
             {booking.room_number ? ` · Room ${booking.room_number}` : ''}
             {' · '}{directionLabel}
           </div>
@@ -216,6 +220,7 @@ export default function AdminPage() {
   const [manualName, setManualName] = useState('');
   const [manualRoom, setManualRoom] = useState('');
   const [manualPax, setManualPax] = useState(1);
+  const [manualBags, setManualBags] = useState(0);
   const [manualEmail, setManualEmail] = useState('');
   const [manualPhone, setManualPhone] = useState('');
   const [manualSendEmails, setManualSendEmails] = useState(false);
@@ -687,6 +692,7 @@ export default function AdminPage() {
           date,
           time: manualTime,
           passenger_count: manualPax,
+          bag_count: manualBags,
           passenger_name: manualName.trim(),
           room_number: manualRoom.trim(),
           email: manualEmail.trim(),
@@ -721,6 +727,7 @@ export default function AdminPage() {
       setManualEmail('');
       setManualPhone('');
       setManualPax(1);
+      setManualBags(0);
       setManualSendEmails(false);
       fetchBookings();
       fetchCalendar(currentMonth);
@@ -1185,6 +1192,23 @@ export default function AdminPage() {
                   {Array.from({ length: Math.max(manualMaxPax, 0) }, (_, i) => i + 1).map((n) => (
                     <option key={n} value={n}>
                       {n} — {PRICE_TABLE_ISK[n]?.toLocaleString() ?? '—'} ISK
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="manual-bags" className="block text-xs font-medium text-slate-600 mb-1">
+                  Bags
+                </label>
+                <select
+                  id="manual-bags"
+                  value={manualBags}
+                  onChange={(e) => setManualBags(Number(e.target.value))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white"
+                >
+                  {Array.from({ length: MAX_BAGS + 1 }, (_, i) => (
+                    <option key={i} value={i}>
+                      {i === 0 ? '0 bags' : i === 1 ? '1 bag' : `${i} bags`}
                     </option>
                   ))}
                 </select>

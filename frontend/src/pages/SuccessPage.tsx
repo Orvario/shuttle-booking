@@ -12,6 +12,7 @@ interface BookingInfo {
   date: string;
   time: string;
   passenger_count: number;
+  bag_count?: number;
   passenger_name: string;
   room_number?: string;
   email: string;
@@ -151,6 +152,12 @@ export default function SuccessPage() {
               <span className="text-slate-500">Passengers</span>
               <span className="font-medium text-slate-800">{booking.passenger_count}</span>
             </div>
+            {typeof booking.bag_count === 'number' && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Bags</span>
+                <span className="font-medium text-slate-800">{booking.bag_count}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-slate-500">Name</span>
               <span className="font-medium text-slate-800">{booking.passenger_name}</span>

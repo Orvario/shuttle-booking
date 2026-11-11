@@ -5,6 +5,8 @@ from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
 from app.hotel_rooms import normalize_hotel_room_number
 
+MAX_BAGS = 12
+
 
 def _validate_yyyy_mm_dd(value: str) -> str:
     s = value.strip()
@@ -21,10 +23,18 @@ class BookingRequest(BaseModel):
     date: str
     time: str
     passenger_count: int
+    bag_count: int
     passenger_name: str
     room_number: str
     email: EmailStr
     phone: str
+
+    @field_validator("bag_count")
+    @classmethod
+    def validate_bag_count(cls, v: int) -> int:
+        if v < 0 or v > MAX_BAGS:
+            raise ValueError(f"Bags must be between 0 and {MAX_BAGS}")
+        return v
 
     @field_validator("room_number")
     @classmethod
@@ -38,6 +48,7 @@ class BookingResponse(BaseModel):
     date: str
     time: str
     passenger_count: int
+    bag_count: int = 0
     passenger_name: str
     room_number: str = ""
     email: str
@@ -60,6 +71,7 @@ class AdminManualBookingCreate(BaseModel):
     date: str
     time: str
     passenger_count: int
+    bag_count: int = 0
     passenger_name: str
     room_number: str
     email: str = ""
@@ -75,6 +87,13 @@ class AdminManualBookingCreate(BaseModel):
     @classmethod
     def validate_time(cls, v: str) -> str:
         return _normalize_hh_mm(v)
+
+    @field_validator("bag_count")
+    @classmethod
+    def validate_bag_count(cls, v: int) -> int:
+        if v < 0 or v > MAX_BAGS:
+            raise ValueError(f"Bags must be between 0 and {MAX_BAGS}")
+        return v
 
     @field_validator("passenger_name")
     @classmethod

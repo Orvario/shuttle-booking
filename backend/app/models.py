@@ -67,6 +67,7 @@ class Booking(Base):
     date: Mapped[str] = mapped_column(String(10))
     time: Mapped[str] = mapped_column(String(5))
     passenger_count: Mapped[int] = mapped_column(Integer)
+    bag_count: Mapped[int] = mapped_column(Integer, default=0)
     passenger_name: Mapped[str] = mapped_column(String(200))
     room_number: Mapped[str] = mapped_column(String(50), default="")
     email: Mapped[str] = mapped_column(String(200))

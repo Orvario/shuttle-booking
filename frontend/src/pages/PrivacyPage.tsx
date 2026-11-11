@@ -39,7 +39,7 @@ export default function PrivacyPage() {
               <li>Hotel room number</li>
               <li>Email address</li>
               <li>Phone number (including country code)</li>
-              <li>Booking details: date, time, and number of passengers</li>
+              <li>Booking details: date, time, number of passengers, and number of bags</li>
             </ul>
             <p className="mt-3">
               We do <strong>not</strong> collect or store payment card details. All payment

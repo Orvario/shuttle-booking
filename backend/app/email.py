@@ -23,6 +23,7 @@ def _build_confirmation_html(
     passenger_count: int,
     amount_isk: int,
     room_number: str = "",
+    bag_count: int = 0,
 ) -> str:
     direction_label = (
         "Airport → Flyers Hotel"
@@ -63,6 +64,10 @@ def _build_confirmation_html(
       <td style="padding: 10px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #e2e8f0; text-align: right;">{passenger_count}</td>
     </tr>
     <tr>
+      <td style="padding: 10px 0; color: #64748b; border-bottom: 1px solid #e2e8f0;">Bags</td>
+      <td style="padding: 10px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #e2e8f0; text-align: right;">{bag_count}</td>
+    </tr>
+    <tr>
       <td style="padding: 12px 0; color: #0f172a; font-weight: 700;">Total Paid</td>
       <td style="padding: 12px 0; color: #0f172a; font-weight: 700; text-align: right;">{amount_isk:,} ISK</td>
     </tr>
@@ -85,6 +90,7 @@ def _build_hotel_notification_html(
     email: str,
     phone: str,
     room_number: str = "",
+    bag_count: int = 0,
 ) -> str:
     direction_label = (
         "Airport → Flyers Hotel"
@@ -134,6 +140,10 @@ def _build_hotel_notification_html(
       <td style="padding: 10px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #e2e8f0; text-align: right;">{passenger_count}</td>
     </tr>
     <tr>
+      <td style="padding: 10px 0; color: #64748b; border-bottom: 1px solid #e2e8f0;">Bags</td>
+      <td style="padding: 10px 0; color: #0f172a; font-weight: 600; border-bottom: 1px solid #e2e8f0; text-align: right;">{bag_count}</td>
+    </tr>
+    <tr>
       <td style="padding: 12px 0; color: #0f172a; font-weight: 700;">Amount Paid</td>
       <td style="padding: 12px 0; color: #0f172a; font-weight: 700; text-align: right;">{amount_isk:,} ISK</td>
     </tr>
@@ -156,6 +166,7 @@ def send_hotel_notification(
     email: str,
     phone: str,
     room_number: str = "",
+    bag_count: int = 0,
 ) -> None:
     html = _build_hotel_notification_html(
         passenger_name=passenger_name,
@@ -167,6 +178,7 @@ def send_hotel_notification(
         email=email,
         phone=phone,
         room_number=room_number,
+        bag_count=bag_count,
     )
 
     if not settings.resend_api_key:
@@ -204,6 +216,7 @@ def send_confirmation_email(
     passenger_count: int,
     amount_isk: int,
     room_number: str = "",
+    bag_count: int = 0,
 ) -> None:
     html = _build_confirmation_html(
         passenger_name=passenger_name,
@@ -213,6 +226,7 @@ def send_confirmation_email(
         passenger_count=passenger_count,
         amount_isk=amount_isk,
         room_number=room_number,
+        bag_count=bag_count,
     )
 
     if not settings.resend_api_key:

@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { API_BASE_URL, PRICE_TABLE_ISK, ROUTE, SHUTTLE_CAPACITY } from '../config';
+import { API_BASE_URL, MAX_BAGS, PRICE_TABLE_ISK, ROUTE, SHUTTLE_CAPACITY } from '../config';
 import {
   COUNTRY_DIAL_CODES_SORTED,
   countryOptionLabel,
@@ -33,6 +33,7 @@ export default function BookingForm() {
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [passengers, setPassengers] = useState(1);
+  const [bags, setBags] = useState(0);
   const [name, setName] = useState('');
   const [roomNumber, setRoomNumber] = useState('');
   const [email, setEmail] = useState('');
@@ -192,6 +193,7 @@ export default function BookingForm() {
           date,
           time,
           passenger_count: passengers,
+          bag_count: bags,
           passenger_name: name,
           room_number: roomNumber.trim(),
           email,
@@ -355,6 +357,26 @@ export default function BookingForm() {
                 ? `${maxPassengers} seat${maxPassengers === 1 ? '' : 's'} remaining for this departure`
                 : `Up to ${SHUTTLE_CAPACITY} passengers for this departure`}
           </p>
+        </div>
+
+        {/* Bags */}
+        <div>
+          <label htmlFor="bags" className="block text-sm font-medium text-slate-700 mb-1">
+            Number of Bags <span className="text-red-400">*</span>
+          </label>
+          <select
+            id="bags"
+            required
+            value={bags}
+            onChange={(e) => setBags(Number(e.target.value))}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white"
+          >
+            {Array.from({ length: MAX_BAGS + 1 }, (_, i) => (
+              <option key={i} value={i}>
+                {i === 0 ? '0 bags' : i === 1 ? '1 bag' : `${i} bags`}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Contact details */}

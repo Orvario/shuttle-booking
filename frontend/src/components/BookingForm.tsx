@@ -6,6 +6,7 @@ import {
   countryOptionLabel,
   dialCodeForCountry,
 } from '../countryCodes';
+import { HOTEL_ROOM_NUMBERS } from '../hotelRooms';
 
 const PENDING_BOOKING_KEY = 'shuttle_pending_booking_id';
 
@@ -376,16 +377,22 @@ export default function BookingForm() {
             <label htmlFor="room" className="block text-sm font-medium text-slate-700 mb-1">
               Room Number <span className="text-red-400">*</span>
             </label>
-            <input
+            <select
               id="room"
-              type="text"
               required
               value={roomNumber}
               onChange={(e) => setRoomNumber(e.target.value)}
-              placeholder="e.g. 204"
-              autoComplete="off"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-            />
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white"
+            >
+              <option value="" disabled>
+                Select room
+              </option>
+              {HOTEL_ROOM_NUMBERS.map((room) => (
+                <option key={room} value={room}>
+                  {room}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">

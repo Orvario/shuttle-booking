@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
+from app.hotel_rooms import normalize_hotel_room_number
+
 
 def _validate_yyyy_mm_dd(value: str) -> str:
     s = value.strip()
@@ -27,12 +29,7 @@ class BookingRequest(BaseModel):
     @field_validator("room_number")
     @classmethod
     def validate_room_number(cls, v: str) -> str:
-        s = v.strip()
-        if not s:
-            raise ValueError("Room number is required")
-        if len(s) > 50:
-            raise ValueError("Room number is too long")
-        return s
+        return normalize_hotel_room_number(v)
 
 
 class BookingResponse(BaseModel):
@@ -92,12 +89,7 @@ class AdminManualBookingCreate(BaseModel):
     @field_validator("room_number")
     @classmethod
     def validate_room_number(cls, v: str) -> str:
-        s = v.strip()
-        if not s:
-            raise ValueError("Room number is required")
-        if len(s) > 50:
-            raise ValueError("Room number is too long")
-        return s
+        return normalize_hotel_room_number(v)
 
     @field_validator("email")
     @classmethod

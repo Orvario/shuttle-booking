@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, type FormEvent } from 'react';
 import { API_BASE_URL, PRICE_TABLE_ISK, SHUTTLE_CAPACITY } from '../config';
+import { HOTEL_ROOM_NUMBERS } from '../hotelRooms';
 import MiniCalendar from '../components/MiniCalendar';
 
 interface Booking {
@@ -1206,15 +1207,22 @@ export default function AdminPage() {
                 <label htmlFor="manual-room" className="block text-xs font-medium text-slate-600 mb-1">
                   Room number
                 </label>
-                <input
+                <select
                   id="manual-room"
-                  type="text"
                   required
                   value={manualRoom}
                   onChange={(e) => setManualRoom(e.target.value)}
-                  placeholder="e.g. 204"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
-                />
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 bg-white"
+                >
+                  <option value="" disabled>
+                    Select room
+                  </option>
+                  {HOTEL_ROOM_NUMBERS.map((room) => (
+                    <option key={room} value={room}>
+                      {room}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label htmlFor="manual-email" className="block text-xs font-medium text-slate-600 mb-1">
